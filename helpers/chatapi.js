@@ -1,9 +1,40 @@
 const StorageAPI = require("./storage.js")
 const { checkAndIncrementUsage } = StorageAPI
-const { preprocess } = require("./chatAPI/preprocessing.js")
+const { preprocess, countTokens } = require("./chatAPI/preprocessing.js")
 const { scanChat }  = require("./chatAPI/mod.js")
 
-// OpenAI-compatible error shape. source: "app" | "upstream"
+const _reqStats = {
+    total: 0,
+    totalInputTokens: 0,
+    totalOutputTokens: 0,
+    recentTimestamps: [],
+}
+
+function _recordRequest() {
+    _reqStats.total++
+    const ts = Date.now()
+    _reqStats.recentTimestamps.push(ts)
+    const cutoff = ts - 60000
+    _reqStats.recentTimestamps = _reqStats.recentTimestamps.filter(t => t >= cutoff)
+}
+
+function _recordTokens(input, output) {
+    if (input)  _reqStats.totalInputTokens  += input
+    if (output) _reqStats.totalOutputTokens += output
+}
+
+function getRequestStats() {
+    const cutoff = Date.now() - 60000
+    _reqStats.recentTimestamps = _reqStats.recentTimestamps.filter(t => t >= cutoff)
+    const n = _reqStats.total
+    return {
+        requests: n,
+        requestAverageInput:  n ? Math.round(_reqStats.totalInputTokens  / n) : 0,
+        requestAverageOutput: n ? Math.round(_reqStats.totalOutputTokens / n) : 0,
+        rpm: _reqStats.recentTimestamps.length,
+    }
+}
+
 function makeError(message, code, type, status) {
   return { status, body: { error: { message, type, code, param: null } } }
 }
@@ -28,7 +59,8 @@ module.exports = function (fastify, opts, done) {
   })
 
   fastify.get("/v1/models", async (request, reply) => {
-    const modelList = StorageAPI.getModels(request.headers.authorization.split(" ")[1])
+    const apiKey = request.headers.authorization?.split(" ")[1] ?? null
+    const modelList = StorageAPI.getModels(apiKey)
 
     return reply.send({
       object: "list",
@@ -87,16 +119,36 @@ module.exports = function (fastify, opts, done) {
       return sendError(reply, APP_ERRORS.content_moderated)
     }
 
+    const inputEstimate = Math.round(countTokens(request.body.messages))
+
     const proxyUrl = `https://ffproxy.sayuki-proxy.com/?target=${encodeURIComponent(masterKey.upstreamUrl)}`
+    const upstreamHeaders = {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${masterKey.upstreamKey}`,
+      "X-Proxy-Token": "sayuki-proxy-forward-protection"
+    }
+    const upstreamBody = JSON.stringify(request.body)
+
+    if (global.__DEBUG) {
+      global.__debugLog("UPSTREAM FETCH", {
+        proxyUrl,
+        targetUrl: masterKey.upstreamUrl,
+        headers: upstreamHeaders,
+        body: request.body,
+      })
+    }
+
     const upstream = await fetch(proxyUrl, {
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${masterKey.upstreamKey}`,
-        "X-Proxy-Token": "sayuki-proxy-forward-protection"
-      },
-      body: JSON.stringify(request.body),
+      headers: upstreamHeaders,
+      body: upstreamBody,
       method: "POST"
     })
+
+    if (global.__DEBUG) {
+      const upstreamRespHeaders = {}
+      upstream.headers.forEach((v, k) => { upstreamRespHeaders[k] = v })
+      global.__debugLog(`UPSTREAM RESPONSE ${upstream.status}`, { headers: upstreamRespHeaders })
+    }
 
     if (!upstream.ok) {
       let upstreamBody
@@ -112,14 +164,46 @@ module.exports = function (fastify, opts, done) {
       })
     }
 
+    _recordRequest()
+    _recordTokens(inputEstimate, 0)
+
     if (request.body.stream === true) {
-      const { Readable } = require("stream")
+      const { Readable, Transform } = require("stream")
       reply.header("Content-Type", "text/event-stream")
-      return reply.send(Readable.fromWeb(upstream.body))
+
+      let outputLength = 0
+      const interceptor = new Transform({
+        transform(chunk, _enc, cb) {
+          const lines = chunk.toString().split("\n")
+          for (const line of lines) {
+            if (!line.startsWith("data: ")) continue
+            const payload = line.slice(6).trim()
+            if (payload === "[DONE]") continue
+            try {
+              const delta = JSON.parse(payload)?.choices?.[0]?.delta?.content
+              if (delta) outputLength += delta.length
+            } catch {}
+          }
+          this.push(chunk)
+          cb()
+        },
+        flush(cb) {
+          _recordTokens(0, Math.round(outputLength / 3))
+          cb()
+        }
+      })
+
+      return reply.send(Readable.fromWeb(upstream.body).pipe(interceptor))
     } else {
-      return reply.send(await upstream.json())
+      const responseBody = await upstream.json()
+      const outputContent = responseBody?.choices?.[0]?.message?.content ?? ""
+      _recordTokens(0, Math.round(outputContent.length / 3))
+      if (global.__DEBUG) global.__debugLog("UPSTREAM RESPONSE BODY (non-stream)", responseBody)
+      return reply.send(responseBody)
     }
   })
 
   done()
 }
+
+module.exports.getRequestStats = getRequestStats

@@ -2,7 +2,11 @@ const StorageAPI = require("../storage.js")
 const { countTokens, adjustToWindow } = require("./preprocessing.js")
 
 let modConfig = StorageAPI.getModerationInfo()
-let flags = 
+
+const MAX_CACHE_SIZE = 500
+const resultCache = new Map()
+
+let flags =
 [
 
     " loli ", 
@@ -16,6 +20,7 @@ let flags =
 
 setInterval(function(){
     modConfig = StorageAPI.getModerationInfo()
+    resultCache.clear() // system prompt may have changed
 }, 5 * 60 * 1000) // refresh every 5 minutes
 
 async function notifyDiscord(reason, username) {
@@ -67,8 +72,22 @@ async function scanChat(conversation, username, ip){
         }
     }
 
+    const systemPrompt = modConfig.moderationPrompt ?? "You are a content moderation assistant."
+    // skip [0]=system [1]=first user (usually ".") [2]=first assistant (usually huge)
+    const keyTurns = conversation.slice(3, 8).map(m => {
+        const text = Array.isArray(m.content)
+            ? m.content.filter(p => p.type === "text").map(p => p.text).join(" ")
+            : (typeof m.content === "string" ? m.content : "")
+        return m.role + ":" + text
+    }).join("|")
+    const cacheKey = keyTurns
+
+    if (resultCache.has(cacheKey)) {
+        return resultCache.get(cacheKey)
+    }
+
     let moderationMessages = [
-        {"role": "system", "content": modConfig.moderationPrompt ?? "You are a content moderation assistant."},
+        {"role": "system", "content": systemPrompt},
         {"role": "user", "content": `Analyze this transcript, determine if it violates the guidelines presented, if it does, return \`BLOCK\`, else, return \`PASS\`:\n\`\`\`markdown\n${transcript}\`\`\`\nPresent your analysis; BLOCK or PASS. If your judgement is BLOCK, provide a explanation in your response. Otherwise, ONLY return the word PASS and nothing else`}
     ]
 
@@ -90,20 +109,21 @@ async function scanChat(conversation, username, ip){
         throw new Error(`Moderation API error: ${typeof aiReply.error === "string" ? aiReply.error : JSON.stringify(aiReply.error)}`)
     }
 
+    let result
     if (aiReply.choices[0].message.content.toUpperCase().includes("[BLOCK]") === false){
-        return {
-            isFlagged: false, 
-            reason: ""
-        }
+        result = { isFlagged: false, reason: "" }
     }
     else {
-        logChat(conversation, aiReply, username,ip)
+        logChat(conversation, aiReply, username, ip)
         notifyDiscord(aiReply, username)
-        return {
-            isFlagged: true,
-            reason: aiReply
-        }
+        result = { isFlagged: true, reason: aiReply }
     }
+
+    if (resultCache.size >= MAX_CACHE_SIZE) {
+        resultCache.delete(resultCache.keys().next().value) // evict oldest
+    }
+    resultCache.set(cacheKey, result)
+    return result
 }
 
 module.exports = { scanChat }

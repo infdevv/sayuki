@@ -92,6 +92,22 @@ try {
     db.run(`ALTER TABLE master_keys ADD COLUMN context_windows TEXT NOT NULL DEFAULT '{}'`);
 } catch (e) {}
 
+try {
+    db.run(`ALTER TABLE master_keys ADD COLUMN excluded_users TEXT NOT NULL DEFAULT '[]'`);
+} catch (e) {}
+
+try {
+    db.run(`ALTER TABLE master_keys ADD COLUMN pool_mode INTEGER NOT NULL DEFAULT 0`);
+} catch (e) {}
+
+try {
+    db.run(`ALTER TABLE master_keys ADD COLUMN pool_usage_date TEXT NOT NULL DEFAULT ''`);
+} catch (e) {}
+
+try {
+    db.run(`ALTER TABLE master_keys ADD COLUMN pool_usage_count INTEGER NOT NULL DEFAULT 0`);
+} catch (e) {}
+
 db.run(`CREATE TABLE IF NOT EXISTS master_key_access (
     username        TEXT NOT NULL,
     master_key_name TEXT NOT NULL,
@@ -274,6 +290,41 @@ function setUserAdmin(username, makeAdmin) {
     return { worked: true };
 }
 
+// ── Excluded users ───────────────────────────────────────────────────────────
+
+function getExcludedUsers(masterKeyName, requestingUser) {
+    const row = db.query("SELECT owner, excluded_users FROM master_keys WHERE name = ?").get(masterKeyName);
+    if (!row) return { worked: false, message: "Master key not found" };
+    if (row.owner !== requestingUser && !isAdmin(requestingUser))
+        return { worked: false, message: "Forbidden" };
+    return { worked: true, excluded: JSON.parse(row.excluded_users || "[]") };
+}
+
+function addExcludedUser(masterKeyName, username, requestingUser) {
+    const row = db.query("SELECT owner, excluded_users FROM master_keys WHERE name = ?").get(masterKeyName);
+    if (!row) return { worked: false, message: "Master key not found" };
+    if (row.owner !== requestingUser && !isAdmin(requestingUser))
+        return { worked: false, message: "Forbidden" };
+    if (!userExists(username)) return { worked: false, message: "User not found" };
+    const list = JSON.parse(row.excluded_users || "[]");
+    if (!list.includes(username)) {
+        list.push(username);
+        db.run("UPDATE master_keys SET excluded_users = ? WHERE name = ?", [JSON.stringify(list), masterKeyName]);
+    }
+    return { worked: true };
+}
+
+function removeExcludedUser(masterKeyName, username, requestingUser) {
+    const row = db.query("SELECT owner, excluded_users FROM master_keys WHERE name = ?").get(masterKeyName);
+    if (!row) return { worked: false, message: "Master key not found" };
+    if (row.owner !== requestingUser && !isAdmin(requestingUser))
+        return { worked: false, message: "Forbidden" };
+    const list = JSON.parse(row.excluded_users || "[]");
+    db.run("UPDATE master_keys SET excluded_users = ? WHERE name = ?",
+        [JSON.stringify(list.filter(u => u !== username)), masterKeyName]);
+    return { worked: true };
+}
+
 // ── Config ───────────────────────────────────────────────────────────────────
 
 function getConfig(key) {
@@ -341,7 +392,7 @@ function getContextWindow(model, provider) {
 
 // ── Master keys ──────────────────────────────────────────────────────────────
 
-function createMasterKey(name, key, url, provider, limit, models, owner, contextWindows) {
+function createMasterKey(name, key, url, provider, limit, models, owner, contextWindows, poolMode) {
     try {
         enforce(name, "name");
         enforce(key, "upstreamKey");
@@ -353,9 +404,9 @@ function createMasterKey(name, key, url, provider, limit, models, owner, context
 
     const code = crypto.randomBytes(5).toString("hex").toUpperCase();
     db.run(
-        `INSERT INTO master_keys (name, upstream_key, url, provider, owner, limit_per_day, models, code, created_at, context_windows)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [name, key, url, provider ?? "", owner, limit || 0, JSON.stringify(models || []), code, now(), JSON.stringify(contextWindows || {})]
+        `INSERT INTO master_keys (name, upstream_key, url, provider, owner, limit_per_day, models, code, created_at, context_windows, pool_mode)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [name, key, url, provider ?? "", owner, limit || 0, JSON.stringify(models || []), code, now(), JSON.stringify(contextWindows || {}), poolMode ? 1 : 0]
     );
     db.run("INSERT OR IGNORE INTO master_key_access (username, master_key_name) VALUES (?, ?)", [owner, name]);
 
@@ -368,13 +419,14 @@ function editMasterKey(name, updates, requestingUser) {
     if (row.owner !== requestingUser && !isAdmin(requestingUser))
         return { worked: false, message: "Forbidden" };
 
-    const colMap = { key: "upstream_key", url: "url", provider: "provider", limit: "limit_per_day", models: "models", contextWindows: "context_windows" };
+    const colMap = { key: "upstream_key", url: "url", provider: "provider", limit: "limit_per_day", models: "models", contextWindows: "context_windows", poolMode: "pool_mode" };
     const limitMap = { key: "upstreamKey", url: "url", provider: "provider" };
     for (const [field, col] of Object.entries(colMap)) {
         if (updates[field] === undefined) continue;
         let val;
         if (field === "models") val = JSON.stringify(updates[field]);
         else if (field === "contextWindows") val = JSON.stringify(updates[field]);
+        else if (field === "poolMode") val = updates[field] ? 1 : 0;
         else val = updates[field];
         if (limitMap[field]) try { enforce(String(val), limitMap[field]); } catch (e) { return { worked: false, message: e.message }; }
         db.run(`UPDATE master_keys SET ${col} = ? WHERE name = ?`, [val, name]);
@@ -404,7 +456,8 @@ function getMasterKeys(requestingUser) {
         limit: r.limit_per_day,
         models: JSON.parse(r.models || "[]"),
         contextWindows: JSON.parse(r.context_windows || "{}"),
-        code: r.code
+        code: r.code,
+        poolMode: r.pool_mode === 1
     }));
 }
 
@@ -417,15 +470,19 @@ function getOwnedMasterKeys(username) {
         limit: r.limit_per_day,
         models: JSON.parse(r.models || "[]"),
         contextWindows: JSON.parse(r.context_windows || "{}"),
-        code: r.code
+        code: r.code,
+        poolMode: r.pool_mode === 1
     }));
 }
 
 // ── Access codes ─────────────────────────────────────────────────────────────
 
 function redeemMasterKeyCode(code, user) {
-    const mk = db.query("SELECT name FROM master_keys WHERE code = ?").get(code);
+    const mk = db.query("SELECT name, excluded_users FROM master_keys WHERE code = ?").get(code);
     if (!mk) return { worked: false, message: "Invalid code" };
+
+    const excludedUsers = JSON.parse(mk.excluded_users || "[]");
+    if (excludedUsers.includes(user)) return { worked: false, message: "You are blocked from accessing this provider" };
 
     if (db.query("SELECT 1 FROM master_key_access WHERE username = ? AND master_key_name = ?").get(user, mk.name))
         return { worked: false, message: "Already have access to this master key" };
@@ -436,11 +493,14 @@ function redeemMasterKeyCode(code, user) {
 
 function getUserAccessibleMasterKeys(user) {
     return db.query(`
-        SELECT mk.name, mk.owner, mk.models, mk.context_windows, mk.limit_per_day AS lim
+        SELECT mk.name, mk.owner, mk.models, mk.context_windows, mk.limit_per_day AS lim, mk.excluded_users
         FROM master_keys mk
         JOIN master_key_access mka ON mka.master_key_name = mk.name
         WHERE mka.username = ?
-    `).all(user).map(r => ({
+    `).all(user).filter(r => {
+        const excluded = JSON.parse(r.excluded_users || "[]");
+        return !excluded.includes(user);
+    }).map(r => ({
         name: r.name,
         owner: r.owner,
         models: JSON.parse(r.models || "[]"),
@@ -454,7 +514,7 @@ function getUserAccessibleMasterKeys(user) {
 function validateKey(token) {
     const row = db.query(`
         SELECT ak.owner, ak.master_key, ak.prompt_names, ak.lorebook_names, ak.plugin_names,
-               mk.upstream_key, mk.url, mk.models
+               mk.upstream_key, mk.url, mk.models, mk.provider, mk.excluded_users
         FROM api_keys ak
         JOIN master_keys mk ON ak.master_key = mk.name
         JOIN master_key_access mka ON mka.username = ak.owner AND mka.master_key_name = ak.master_key
@@ -462,6 +522,9 @@ function validateKey(token) {
     `).get(token);
 
     if (!row || !userExists(row.owner)) return false;
+
+    const excludedUsers = JSON.parse(row.excluded_users || "[]");
+    if (excludedUsers.includes(row.owner)) return false;
 
     const promptNames = JSON.parse(row.prompt_names || "[]");
     const lorebookNames = JSON.parse(row.lorebook_names || "[]");
@@ -480,7 +543,7 @@ function validateKey(token) {
     const pluginsList = pluginNames;
 
     return {
-        provider: row.owner,
+        provider: row.provider,
         upstreamKey: row.upstream_key,
         upstreamUrl: row.url,
         masterKeyName: row.master_key,
@@ -518,8 +581,11 @@ function createApiKey(masterKeyName, owner) {
     if (!db.query("SELECT 1 FROM master_key_access WHERE username = ? AND master_key_name = ?").get(owner, masterKeyName))
         return { worked: false, message: "No access to this master key" };
 
-    const mk = db.query("SELECT owner FROM master_keys WHERE name = ?").get(masterKeyName);
+    const mk = db.query("SELECT owner, excluded_users FROM master_keys WHERE name = ?").get(masterKeyName);
     if (!mk) return { worked: false, message: "Master key not found" };
+
+    const excludedUsers = JSON.parse(mk.excluded_users || "[]");
+    if (excludedUsers.includes(owner)) return { worked: false, message: "You are excluded from this provider" };
 
     const keyToken = "sayuki-" + crypto.randomBytes(12).toString("hex");
     db.run(
@@ -612,11 +678,21 @@ function removePluginFromApiKey(keyToken, pluginName) {
 }
 
 function checkAndIncrementUsage(masterKeyName, userKeyToken) {
-    const limit = db.query("SELECT limit_per_day FROM master_keys WHERE name = ?")
-        .get(masterKeyName)?.limit_per_day ?? 0;
-    if (!limit || limit <= 0) return true;
-
+    const mk = db.query("SELECT limit_per_day, pool_mode, pool_usage_date, pool_usage_count FROM master_keys WHERE name = ?")
+        .get(masterKeyName);
+    const limit = mk?.limit_per_day ?? 0;
     const today = new Date().toISOString().slice(0, 10);
+
+    if (mk.pool_mode === 1) {
+        if (mk.pool_usage_date !== today) {
+            db.run("UPDATE master_keys SET pool_usage_date = ?, pool_usage_count = 1 WHERE name = ?", [today, masterKeyName]);
+            return true;
+        }
+        if (limit > 0 && mk.pool_usage_count >= limit) return false;
+        db.run("UPDATE master_keys SET pool_usage_count = pool_usage_count + 1 WHERE name = ?", [masterKeyName]);
+        return true;
+    }
+
     const row = db.query("SELECT usage_date, usage_count FROM api_keys WHERE token = ?").get(userKeyToken);
     if (!row) return true;
 
@@ -625,7 +701,7 @@ function checkAndIncrementUsage(masterKeyName, userKeyToken) {
         return true;
     }
 
-    if (row.usage_count >= limit) return false;
+    if (limit > 0 && row.usage_count >= limit) return false;
 
     db.run("UPDATE api_keys SET usage_count = usage_count + 1 WHERE token = ?", [userKeyToken]);
     return true;
@@ -724,6 +800,62 @@ function getAuditLogs() {
     ).all();
 }
 
+function getFlaggedChats() {
+    return db.query(
+        "SELECT id, username, content, ip_address AS ip, created_at FROM logs WHERE type = 'moderation' ORDER BY id DESC"
+    ).all().map(row => {
+        let parsed;
+        try { parsed = JSON.parse(row.content); } catch { parsed = { reason: row.content, conversation: [] }; }
+        return {
+            id: row.id,
+            username: row.username,
+            reason: typeof parsed.reason === "string" ? parsed.reason : JSON.stringify(parsed.reason),
+            conversation: parsed.conversation ?? [],
+            ip: row.ip,
+            createdAt: row.created_at
+        };
+    });
+}
+
+function getDbCounts() {
+    const today = new Date().toISOString().slice(0, 10)
+
+    const users     = db.query("SELECT COUNT(*) AS c FROM users").get().c
+    const prompts   = db.query("SELECT COUNT(*) AS c FROM prompts").get().c
+    const lorebooks = db.query("SELECT COUNT(*) AS c FROM lorebooks").get().c
+    const providers = db.query("SELECT COUNT(*) AS c FROM master_keys").get().c
+    const totalKeys = db.query("SELECT COUNT(*) AS c FROM api_keys").get().c
+    const activeKeysToday = db.query("SELECT COUNT(*) AS c FROM api_keys WHERE usage_date = ?").get(today).c
+
+    // Per-plugin: how many keys and distinct users have it enabled
+    const keyRows = db.query("SELECT plugin_names, owner FROM api_keys").all()
+    const pluginMap = {}
+    for (const row of keyRows) {
+        const ps = JSON.parse(row.plugin_names || "[]")
+        for (const p of ps) {
+            if (!pluginMap[p]) pluginMap[p] = { keys: 0, users: new Set() }
+            pluginMap[p].keys++
+            pluginMap[p].users.add(row.owner)
+        }
+    }
+    const pluginUsage = Object.entries(pluginMap)
+        .map(([name, s]) => ({ name, keys: s.keys, users: s.users.size }))
+        .sort((a, b) => b.keys - a.keys)
+
+    // Per-provider: distinct users with access and total API keys created
+    const providerUsage = db.query(`
+        SELECT mk.name, mk.owner,
+               COUNT(DISTINCT mka.username) AS user_count,
+               COUNT(DISTINCT ak.token)     AS key_count
+        FROM master_keys mk
+        LEFT JOIN master_key_access mka ON mka.master_key_name = mk.name
+        LEFT JOIN api_keys ak ON ak.master_key = mk.name
+        GROUP BY mk.name
+    `).all().map(r => ({ name: r.name, owner: r.owner, users: r.user_count, keys: r.key_count }))
+
+    return { users, prompts, lorebooks, providers, totalKeys, activeKeysToday, pluginUsage, providerUsage }
+}
+
 // ── Stubs ────────────────────────────────────────────────────────────────────
 
 function getUserProviders() { return []; }
@@ -784,5 +916,10 @@ module.exports = {
     unbanUser,
     setUserAdmin,
     logItem,
-    getAuditLogs
+    getAuditLogs,
+    getFlaggedChats,
+    getDbCounts,
+    getExcludedUsers,
+    addExcludedUser,
+    removeExcludedUser
 };

@@ -2,6 +2,18 @@ const fastify = require("fastify")
 const path = require("path")
 require("dotenv").config()
 
+const DEBUG = process.env.DEBUG_LOG === "true"
+
+function debugLog(label, data) {
+    if (!DEBUG) return
+    const ts = new Date().toISOString()
+    console.log(`\n[DEBUG ${ts}] ── ${label} ──`)
+    if (data !== undefined) console.log(typeof data === "string" ? data : JSON.stringify(data, null, 2))
+}
+
+global.__debugLog = debugLog
+global.__DEBUG = DEBUG
+
 const app = fastify({ trustProxy: true })
 
 app.register(require("@fastify/static"), {
@@ -19,6 +31,34 @@ app.register(require("@fastify/cors"), {
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
 })
+
+if (DEBUG) {
+    console.log("[DEBUG] Debug logging is ENABLED — all requests, headers, bodies, and upstream calls will be logged")
+
+    app.addHook("onRequest", (request, reply, done) => {
+        debugLog(`INBOUND ${request.method} ${request.url}`, {
+            ip: request.ip,
+            headers: request.headers,
+        })
+        done()
+    })
+
+    app.addHook("preHandler", (request, reply, done) => {
+        if (request.body !== undefined) {
+            debugLog(`REQUEST BODY ${request.method} ${request.url}`, request.body)
+        }
+        done()
+    })
+
+    app.addHook("onSend", (request, reply, payload, done) => {
+        let parsed = payload
+        if (typeof payload === "string") {
+            try { parsed = JSON.parse(payload) } catch { parsed = payload }
+        }
+        debugLog(`RESPONSE ${request.method} ${request.url} → ${reply.statusCode}`, parsed)
+        done(null, payload)
+    })
+}
 
 app.get("/health", async (request, reply) => {
     return reply.status(200).reply("ok") // i sure fucking hope we're ok

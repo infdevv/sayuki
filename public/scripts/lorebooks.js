@@ -23,21 +23,28 @@ function addLorebook(name, description, owner) {
     lorebook.classList.add("prompt");
     lorebook.dataset.name = name;
     lorebook.innerHTML = `
-        <h4>${name}</h4>
-        <p>${description}</p>
-        <p>By: ${owner}</p>
+        <h4></h4>
+        <p class="lb-desc"></p>
+        <p class="lb-owner"></p>
         <div class="card-actions">
-            <button class="use-btn" onclick="openUseLorebookModal('${name}')">Apply to Key</button>
+            <button class="use-btn">Apply to Key</button>
             ${canManage ? `
             <div class="card-menu">
                 <button class="card-menu-btn" onclick="toggleMenu(this)">⋮</button>
                 <div class="card-menu-dropdown">
-                    <button onclick="removeLorebook('${name}', this)">Delete</button>
+                    <button class="lb-delete-btn">Delete</button>
                 </div>
             </div>
             ` : ""}
         </div>
     `;
+    lorebook.querySelector("h4").textContent = name;
+    lorebook.querySelector(".lb-desc").textContent = description;
+    lorebook.querySelector(".lb-owner").textContent = `By: ${owner}`;
+    lorebook.querySelector(".use-btn").addEventListener("click", () => openUseLorebookModal(name));
+    if (canManage) {
+        lorebook.querySelector(".lb-delete-btn").addEventListener("click", function() { removeLorebook(name, this); });
+    }
     document.querySelector(".prompts").appendChild(lorebook);
 }
 
@@ -119,7 +126,7 @@ async function removeLorebook(name, btn) {
         body: JSON.stringify({ name })
     });
     if (res.ok) {
-        document.querySelector(`.prompt[data-name="${name}"]`)?.remove();
+        document.querySelector(`.prompt[data-name="${CSS.escape(name)}"]`)?.remove();
     } else {
         btn.disabled = false;
         const err = await res.json().catch(() => ({}));

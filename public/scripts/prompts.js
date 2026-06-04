@@ -22,27 +22,34 @@ function addprompt(name, description, owner, content) {
     const canManage = owner === localStorage.getItem("username") || currentUserIsAdmin;
     const prompt = document.createElement("div");
     prompt.classList.add("prompt");
-    prompt.dataset.name = name
+    prompt.dataset.name = name;
     prompt.dataset.content = content ?? "";
     prompt.dataset.description = description ?? "";
-    const encodedName = encodeURIComponent(name).replace(/'/g, "%27");
     prompt.innerHTML = `
-        <h4>${name}</h4>
-        <p>${description}</p>
-        <p>By: ${owner}</p>
+        <h4></h4>
+        <p class="prompt-desc"></p>
+        <p class="prompt-owner"></p>
         <div class="card-actions">
-            <button class="use-btn" onclick="openUsePromptModal('${encodedName}')">Apply to Key</button>
+            <button class="use-btn">Apply to Key</button>
             ${canManage ? `
             <div class="card-menu">
                 <button class="card-menu-btn" onclick="toggleMenu(this)">⋮</button>
                 <div class="card-menu-dropdown">
-                    <button onclick="openEditModal('${encodedName}', this)">Edit</button>
-                    <button onclick="removePrompt('${encodedName}', this)">Delete</button>
+                    <button class="prompt-edit-btn">Edit</button>
+                    <button class="prompt-delete-btn">Delete</button>
                 </div>
             </div>
             ` : ""}
         </div>
     `;
+    prompt.querySelector("h4").textContent = name;
+    prompt.querySelector(".prompt-desc").textContent = description;
+    prompt.querySelector(".prompt-owner").textContent = `By: ${owner}`;
+    prompt.querySelector(".use-btn").addEventListener("click", () => openUsePromptModal(name));
+    if (canManage) {
+        prompt.querySelector(".prompt-edit-btn").addEventListener("click", function() { openEditModal(name, this); });
+        prompt.querySelector(".prompt-delete-btn").addEventListener("click", function() { removePrompt(name, this); });
+    }
     document.querySelector(".prompts").appendChild(prompt);
 }
 
@@ -75,7 +82,6 @@ async function loadApiKeysForPrompt() {
 }
 
 async function openUsePromptModal(promptName) {
-    promptName = decodeURIComponent(promptName);
     currentPromptName = promptName;
     document.getElementById("use-prompt-modal-name").textContent = `Applying prompt: ${promptName}`;
     document.getElementById("use-prompt-api-key-select").value = "";
@@ -153,7 +159,6 @@ async function openCreatePromptModal() {
 }
 
 function openEditModal(name, btn) {
-    name = decodeURIComponent(name);
     const card = btn.closest(".prompt");
     editingPrompt = name;
     document.getElementById("name").value = name;
@@ -231,7 +236,6 @@ async function createPrompt() {
 }
 
 async function removePrompt(name, btn) {
-    name = decodeURIComponent(name);
     btn.disabled = true;
     const res = await fetch("/api/deletePrompt", {
         method: "DELETE",

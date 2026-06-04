@@ -6,12 +6,15 @@ function addPlugin(plugin) {
     const el = document.createElement("div");
     el.classList.add("prompt");
     el.innerHTML = `
-        <h4>${plugin.name}</h4>
-        <p>${plugin.description ?? ""}</p>
+        <h4></h4>
+        <p></p>
         <div class="card-actions">
-            <button class="use-btn" onclick="openPluginKeyModal('${plugin.name}')">Apply to Key</button>
+            <button class="use-btn">Apply to Key</button>
         </div>
     `;
+    el.querySelector("h4").textContent = plugin.name;
+    el.querySelector("p").textContent = plugin.description ?? "";
+    el.querySelector(".use-btn").addEventListener("click", () => openPluginKeyModal(plugin.name));
     document.getElementById("plugins-list").appendChild(el);
 }
 

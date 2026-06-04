@@ -383,6 +383,57 @@ input:disabled {
     color: #feb5bf;
 }
 
+#mk-users-list {
+    max-height: 160px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-top: 6px;
+}
+
+#mk-users-list::-webkit-scrollbar {
+    width: 4px;
+}
+
+#mk-users-list::-webkit-scrollbar-thumb {
+    background: rgba(254, 181, 191, 0.3);
+    border-radius: 2px;
+}
+
+.mk-user-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 2px;
+}
+
+.mk-user-name {
+    flex: 1;
+    font-size: 13px;
+    color: #feb5bf;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.mk-exclude-btn {
+    margin: 0;
+    height: 26px;
+    font-size: 11px;
+    padding: 0 10px;
+    flex-shrink: 0;
+}
+
+.mk-exclude-btn.mk-excluded {
+    border-color: #ff6b6b;
+    color: #ff6b6b;
+}
+
+.mk-exclude-btn.mk-excluded:hover {
+    background-color: rgba(255, 107, 107, 0.2);
+}
+
 @media (max-width: 480px) {
     .modal-box {
         padding: 16px;

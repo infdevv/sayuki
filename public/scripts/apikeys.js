@@ -18,24 +18,44 @@ function addKey(keyData) {
     el.innerHTML = `
         <div class="key-content">
             <div class="key-header" onclick="toggleKeyDetails(this)">
-                <h4 class="key-token" title="Click to copy" onclick="copyKey('${key}'); event.stopPropagation()">${masked}</h4>
+                <h4 class="key-token" title="Click to copy"></h4>
             </div>
             <div class="key-details" id="key-details">
-                <h5>Provider: ${provider || "—"}</h5>
-                <h5>Master Key: ${masterKey || "—"}</h5>
-                <h5>Requests: ${usageDisplay}</h5>
+                <h5>Provider: <span class="provider-text"></span></h5>
+                <h5>Master Key: <span class="masterkey-text"></span></h5>
+                <h5>Requests: <span class="requests-text"></span></h5>
                 <h5>Created: ${date}</h5>
                 ${assocCount > 0 ? `<h5>Associations: ${assocCount} item(s)</h5>` : ''}
             </div>
         </div>
         <div class="key-settings">
             <span class="material-symbols-outlined" id="key-chevron" onclick="toggleKeyDetails(this)">expand_more</span>
-            <span class="material-symbols-outlined" title="Copy key" onclick="copyKey('${key}')">content_copy</span>
-            ${assocCount > 0 ? `<span class="material-symbols-outlined" title="Manage associations" onclick="openAssociationsModal('${key}')">info</span>` : ''}
-            <span class="material-symbols-outlined" title="Delete key" onclick="deleteKey('${key}', this)">delete</span>
+            <span class="material-symbols-outlined" title="Copy key" onclick="copyKey(this.closest('.key').dataset.key)">content_copy</span>
+            ${assocCount > 0 ? `<span class="material-symbols-outlined" title="Manage associations" onclick="openAssociationsModal(this.closest('.key').dataset.key)">info</span>` : ''}
+            <span class="material-symbols-outlined" title="Delete key" onclick="deleteKey(this.closest('.key').dataset.key, this)">delete</span>
         </div>
     `;
+    el.dataset.limit = limit;
+    el.dataset.usageDate = usageDate || "";
+    el.dataset.usageCount = usageCount || 0;
+
+    const tokenEl = el.querySelector(".key-token");
+    tokenEl.textContent = masked;
+    tokenEl.addEventListener("click", (e) => { copyKey(e.currentTarget.closest(".key").dataset.key); e.stopPropagation(); });
+    el.querySelector(".provider-text").textContent = provider || "—";
+    el.querySelector(".masterkey-text").textContent = masterKey || "—";
+    updateKeyUsageDisplay(el);
     document.querySelector(".keys").appendChild(el);
+}
+
+function updateKeyUsageDisplay(el) {
+    const today = new Date().toISOString().slice(0, 10);
+    const limit = parseInt(el.dataset.limit) || 0;
+    const usageDate = el.dataset.usageDate;
+    const usageCount = usageDate === today ? (parseInt(el.dataset.usageCount) || 0) : 0;
+    const span = el.querySelector(".requests-text");
+    if (!span) return;
+    span.textContent = limit > 0 ? `${usageCount} / ${limit} today` : `${usageCount} today`;
 }
 
 function copyKey(key) {
@@ -68,7 +88,7 @@ async function deleteKey(key, btn) {
         body: JSON.stringify({ key })
     });
     if (res.ok) {
-        document.querySelector(`.key[data-key="${key}"]`)?.remove();
+        document.querySelector(`.key[data-key="${CSS.escape(key)}"]`)?.remove();
     } else {
         btn.style.opacity = "";
         btn.style.pointerEvents = "";
@@ -158,7 +178,7 @@ async function redeemCode() {
         body: JSON.stringify({ code })
     });
     const data = await res.json();
-    if (!res.ok) return alert(data.error ?? "Failed to redeem code.");
+    if (!res.ok) return alert(data.error ?? data.message ?? "Failed to redeem code.");
 
     closeRedeemModal();
     alert(`Access granted to provider: ${data.masterKey}`);
@@ -198,62 +218,39 @@ function openAssociationsModal(key) {
     const lorebooks = keyData.lorebookNames || [];
     const plugins = keyData.pluginNames || [];
 
+    function makeAssocItem(name, type, container) {
+        const item = document.createElement("div");
+        item.style.cssText = "display:flex;justify-content:space-between;align-items:center;padding:8px;background-color:#1a1a2e;border-radius:4px;";
+        const label = document.createElement("span");
+        label.textContent = name;
+        const del = document.createElement("span");
+        del.className = "material-symbols-outlined";
+        del.style.cssText = "cursor:pointer;font-size:18px;";
+        del.title = "Remove";
+        del.textContent = "delete";
+        del.addEventListener("click", () => removeAssociation(type, name));
+        item.appendChild(label);
+        item.appendChild(del);
+        container.appendChild(item);
+    }
+
     if (prompts.length > 0) {
         promptsEmpty.style.display = "none";
-        prompts.forEach(name => {
-            const item = document.createElement("div");
-            item.style.display = "flex";
-            item.style.justifyContent = "space-between";
-            item.style.alignItems = "center";
-            item.style.padding = "8px";
-            item.style.backgroundColor = "#1a1a2e";
-            item.style.borderRadius = "4px";
-            item.innerHTML = `
-                <span>${name}</span>
-                <span class="material-symbols-outlined" style="cursor: pointer; font-size: 18px;" title="Remove" onclick="removeAssociation('prompt', '${name.replace(/'/g, "\\'")}')">delete</span>
-            `;
-            promptsList.appendChild(item);
-        });
+        prompts.forEach(name => makeAssocItem(name, 'prompt', promptsList));
     } else {
         promptsEmpty.style.display = "block";
     }
 
     if (lorebooks.length > 0) {
         lorebooksEmpty.style.display = "none";
-        lorebooks.forEach(name => {
-            const item = document.createElement("div");
-            item.style.display = "flex";
-            item.style.justifyContent = "space-between";
-            item.style.alignItems = "center";
-            item.style.padding = "8px";
-            item.style.backgroundColor = "#1a1a2e";
-            item.style.borderRadius = "4px";
-            item.innerHTML = `
-                <span>${name}</span>
-                <span class="material-symbols-outlined" style="cursor: pointer; font-size: 18px;" title="Remove" onclick="removeAssociation('lorebook', '${name.replace(/'/g, "\\'")}')">delete</span>
-            `;
-            lorebooksList.appendChild(item);
-        });
+        lorebooks.forEach(name => makeAssocItem(name, 'lorebook', lorebooksList));
     } else {
         lorebooksEmpty.style.display = "block";
     }
 
     if (plugins.length > 0) {
         pluginsEmpty.style.display = "none";
-        plugins.forEach(name => {
-            const item = document.createElement("div");
-            item.style.display = "flex";
-            item.style.justifyContent = "space-between";
-            item.style.alignItems = "center";
-            item.style.padding = "8px";
-            item.style.backgroundColor = "#1a1a2e";
-            item.style.borderRadius = "4px";
-            item.innerHTML = `
-                <span>${name}</span>
-                <span class="material-symbols-outlined" style="cursor: pointer; font-size: 18px;" title="Remove" onclick="removeAssociation('plugin', '${name.replace(/'/g, "\\'")}')">delete</span>
-            `;
-            pluginsList.appendChild(item);
-        });
+        plugins.forEach(name => makeAssocItem(name, 'plugin', pluginsList));
     } else {
         pluginsEmpty.style.display = "block";
     }
@@ -309,7 +306,22 @@ async function init() {
         allKeys = keys;
         for (const k of keys) addKey(k);
     }
+}
 
+async function refreshUsageCounts() {
+    const res = await fetch("/api/apikeys", { headers: { "Authorization": "Bearer " + localStorage.getItem("token"), "Content-Type": "application/json" } });
+    if (!res.ok) return;
+    const keys = await res.json();
+    allKeys = keys;
+    for (const k of keys) {
+        const el = document.querySelector(`.key[data-key="${CSS.escape(k.key)}"]`);
+        if (!el) continue;
+        el.dataset.usageDate = k.usageDate || "";
+        el.dataset.usageCount = k.usageCount || 0;
+        el.dataset.limit = k.limit || 0;
+        updateKeyUsageDisplay(el);
+    }
 }
 
 init();
+setInterval(refreshUsageCounts, 30000);

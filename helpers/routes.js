@@ -43,10 +43,28 @@ const {
     unbanUser,
     setUserAdmin,
     logItem,
-    getAuditLogs
+    getAuditLogs,
+    getFlaggedChats,
+    getDbCounts,
+    getExcludedUsers,
+    addExcludedUser,
+    removeExcludedUser
 } = require("./storage.js")
 
+const { getRequestStats } = require("./chatApi.js")
+
 const { plugins } = require("./chatAPI/plugins.js")
+
+const serverStart = new Date().getTime()
+
+function getStats() {
+    const counts = getDbCounts()
+    return {
+        start: serverStart,
+        ...counts,
+        ...getRequestStats(),
+    }
+}
 
 function getUserFromRequest(request) {
     const rawToken = request.headers.authorization.split(" ")[1]
@@ -338,9 +356,9 @@ module.exports = function (fastify, opts, done) {
     fastify.post("/api/masterkeys/create", async (request, reply) => {
         if (!isAuthed(request)) return reply.code(401).send({ error: "Unauthorized" })
         const username = getUserFromRequest(request)
-        const { name, key, url, limit, models, contextWindows } = request.body
+        const { name, key, url, limit, models, contextWindows, poolMode } = request.body
         if (!name || !key || !url) return reply.code(400).send({ error: "name, key, and url are required" })
-        const result = createMasterKey(name, key, url, username, limit, models, username, contextWindows)
+        const result = createMasterKey(name, key, url, username, limit, models, username, contextWindows, poolMode)
         if (result.worked) logItem(`Created master key: ${name}`, "audit", username, request.ip)
         return reply.code(result.worked ? 200 : 400).send(result)
     })
@@ -365,9 +383,19 @@ module.exports = function (fastify, opts, done) {
         return reply.code(result.worked ? 200 : (result.message === "Forbidden" ? 403 : 400)).send(result)
     })
 
+    fastify.get("/api/stats", async (request, reply) => {
+        if (!isAuthed(request, true)) return reply.code(401).send({ error: "Unauthorized" })
+        return reply.send(getStats())
+    })
+
     fastify.get("/api/logs/audit", async (request, reply) => {
         if (!isAuthed(request, true)) return reply.code(401).send({ error: "Unauthorized" })
         return reply.send(getAuditLogs())
+    })
+
+    fastify.get("/api/logs/moderation", async (request, reply) => {
+        if (!isAuthed(request, true)) return reply.code(401).send({ error: "Unauthorized" })
+        return reply.send(getFlaggedChats())
     })
 
     fastify.post("/api/users/create", async (request, reply) => {
@@ -515,6 +543,33 @@ module.exports = function (fastify, opts, done) {
 
         const result = removePluginFromApiKey(apiKey, pluginName)
         return reply.code(result.worked ? 200 : 400).send(result)
+    })
+
+    fastify.get("/api/masterkeys/:name/excluded", async (request, reply) => {
+        if (!isAuthed(request)) return reply.code(401).send({ error: "Unauthorized" })
+        const username = getUserFromRequest(request)
+        const result = getExcludedUsers(request.params.name, username)
+        return reply.code(result.worked ? 200 : (result.message === "Forbidden" ? 403 : 404)).send(result)
+    })
+
+    fastify.post("/api/masterkeys/:name/excludeUser", async (request, reply) => {
+        if (!isAuthed(request)) return reply.code(401).send({ error: "Unauthorized" })
+        const username = getUserFromRequest(request)
+        const { username: target } = request.body ?? {}
+        if (!target) return reply.code(400).send({ error: "username is required" })
+        const result = addExcludedUser(request.params.name, target, username)
+        if (result.worked) logItem(`Excluded user ${target} from provider ${request.params.name}`, "audit", username, request.ip)
+        return reply.code(result.worked ? 200 : (result.message === "Forbidden" ? 403 : 400)).send(result)
+    })
+
+    fastify.delete("/api/masterkeys/:name/excludeUser", async (request, reply) => {
+        if (!isAuthed(request)) return reply.code(401).send({ error: "Unauthorized" })
+        const username = getUserFromRequest(request)
+        const { username: target } = request.body ?? {}
+        if (!target) return reply.code(400).send({ error: "username is required" })
+        const result = removeExcludedUser(request.params.name, target, username)
+        if (result.worked) logItem(`Removed exclusion of user ${target} from provider ${request.params.name}`, "audit", username, request.ip)
+        return reply.code(result.worked ? 200 : (result.message === "Forbidden" ? 403 : 400)).send(result)
     })
 
     done()

@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+<style>
+    @import url(https://fonts.googleapis.com/css?family=Inter:100,200,300,regular,500,600,700,800,900,100italic,200italic,300italic,italic,500italic,600italic,700italic,800italic,900italic);
+
+    body {
+        margin: 0;
+        color: #feb5bf;
+        font-family: "Inter";
+        user-select: none;
+        max-width: 700px;
+        margin: 0 auto;
+    }
+
+    body::-webkit-scrollbar { display: none; }
+
+    span { color: #feb5bf; }
+
+    .section-title {
+        font-size: 11px;
+        color: #feb5bf;
+        opacity: 0.5;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        margin: 18px 0 8px 2px;
+    }
+
+    .stat-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 8px;
+        width: 100%;
+        box-sizing: border-box;
+    }
+
+    .stat-card {
+        border: 2px solid #feb5bf;
+        border-radius: 12px;
+        padding: 12px 8px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 3px;
+    }
+
+    .stat-value {
+        font-size: 20px;
+        font-weight: 700;
+        color: #feb5bf;
+    }
+
+    .stat-label {
+        font-size: 10px;
+        color: #feb5bf;
+        opacity: 0.55;
+        text-transform: uppercase;
+        letter-spacing: 0.4px;
+        text-align: center;
+    }
+
+    .row-list {
+        border: 2px solid #feb5bf;
+        border-radius: 15px;
+        padding: 8px 5px;
+        display: flex;
+        flex-direction: column;
+        gap: 0;
+        width: 100%;
+        box-sizing: border-box;
+    }
+
+    .row-item {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 8px 12px;
+        border-radius: 10px;
+    }
+
+    .row-icon {
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        border: 2px solid #feb5bf;
+        flex-shrink: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .row-info {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        flex: 1;
+        min-width: 0;
+    }
+
+    .row-name {
+        font-size: 14px;
+        color: #feb5bf;
+        font-weight: 600;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .row-meta {
+        font-size: 11px;
+        color: #feb5bf;
+        opacity: 0.6;
+        display: flex;
+        gap: 10px;
+    }
+
+    .row-badge {
+        font-size: 11px;
+        padding: 1px 8px;
+        border-radius: 190px;
+        border: 1px solid rgba(254,181,191,0.4);
+        color: #feb5bf;
+        opacity: 0.7;
+        white-space: nowrap;
+        flex-shrink: 0;
+    }
+
+    .bar-wrap {
+        width: 100%;
+        height: 4px;
+        background: rgba(254,181,191,0.15);
+        border-radius: 2px;
+        margin-top: 3px;
+    }
+
+    .bar-fill {
+        height: 100%;
+        background: #feb5bf;
+        border-radius: 2px;
+        transition: width 0.4s ease;
+    }
+
+    .empty-msg {
+        font-size: 13px;
+        color: #feb5bf;
+        opacity: 0.4;
+        padding: 12px;
+        text-align: center;
+    }
+
+    .refresh-btn {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        border: 2px solid rgba(254,181,191,0.4);
+        padding: 5px 14px;
+        border-radius: 190px;
+        background: transparent;
+        color: #feb5bf;
+        font-size: 12px;
+        font-family: "Inter";
+        cursor: pointer;
+        opacity: 0.7;
+        transition: opacity 0.2s;
+        margin-bottom: 4px;
+    }
+
+    .refresh-btn:hover { opacity: 1; }
+    .refresh-btn .material-symbols-outlined { font-size: 15px; }
+</style>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=block&icons=bar_chart,extension,storage,refresh" rel="stylesheet" />
+
+<body>
+
+    <button class="refresh-btn" onclick="loadStats()">
+        <span class="material-symbols-outlined">refresh</span>
+        refresh
+    </button>
+
+    <div class="section-title">server</div>
+    <div class="stat-grid" id="server-grid">
+        <div class="stat-card"><span class="stat-value" id="s-uptime">—</span><span class="stat-label">uptime</span></div>
+        <div class="stat-card"><span class="stat-value" id="s-requests">—</span><span class="stat-label">requests</span></div>
+        <div class="stat-card"><span class="stat-value" id="s-rpm">—</span><span class="stat-label">req / min</span></div>
+        <div class="stat-card"><span class="stat-value" id="s-avg-in">—</span><span class="stat-label">avg in tokens</span></div>
+        <div class="stat-card"><span class="stat-value" id="s-avg-out">—</span><span class="stat-label">avg out tokens</span></div>
+    </div>
+
+    <div class="section-title">database</div>
+    <div class="stat-grid">
+        <div class="stat-card"><span class="stat-value" id="d-users">—</span><span class="stat-label">users</span></div>
+        <div class="stat-card"><span class="stat-value" id="d-providers">—</span><span class="stat-label">providers</span></div>
+        <div class="stat-card"><span class="stat-value" id="d-keys">—</span><span class="stat-label">api keys</span></div>
+        <div class="stat-card"><span class="stat-value" id="d-active">—</span><span class="stat-label">active today</span></div>
+        <div class="stat-card"><span class="stat-value" id="d-prompts">—</span><span class="stat-label">prompts</span></div>
+        <div class="stat-card"><span class="stat-value" id="d-lorebooks">—</span><span class="stat-label">lorebooks</span></div>
+    </div>
+
+    <div class="section-title">plugins</div>
+    <div class="row-list" id="plugins-list">
+        <span class="empty-msg">No plugin usage</span>
+    </div>
+
+    <div class="section-title">providers</div>
+    <div class="row-list" id="providers-list">
+        <span class="empty-msg">No providers</span>
+    </div>
+
+    <script src="../../scripts/auth.js"></script>
+    <script>
+        function fmtUptime(ms) {
+            const s = Math.floor(ms / 1000)
+            const d = Math.floor(s / 86400)
+            const h = Math.floor((s % 86400) / 3600)
+            const m = Math.floor((s % 3600) / 60)
+            if (d > 0) return `${d}d ${h}h`
+            if (h > 0) return `${h}h ${m}m`
+            return `${m}m`
+        }
+
+        function fmtNum(n) {
+            if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + "M"
+            if (n >= 1_000) return (n / 1_000).toFixed(1) + "k"
+            return String(n)
+        }
+
+        function set(id, val) {
+            const el = document.getElementById(id)
+            if (el) el.textContent = val
+        }
+
+        function renderPlugins(list) {
+            const el = document.getElementById("plugins-list")
+            el.innerHTML = ""
+            if (!list || list.length === 0) {
+                el.innerHTML = '<span class="empty-msg">No plugin usage</span>'
+                return
+            }
+            const maxKeys = list[0].keys
+            for (const p of list) {
+                const pct = maxKeys > 0 ? Math.round((p.keys / maxKeys) * 100) : 0
+                const item = document.createElement("div")
+                item.className = "row-item"
+                item.innerHTML = `
+                    <div class="row-icon">
+                        <span class="material-symbols-outlined" style="font-size:16px">extension</span>
+                    </div>
+                    <div class="row-info">
+                        <span class="row-name">${p.name}</span>
+                        <div class="bar-wrap"><div class="bar-fill" style="width:${pct}%"></div></div>
+                        <span class="row-meta">
+                            <span>${p.keys} key${p.keys !== 1 ? "s" : ""}</span>
+                            <span>${p.users} user${p.users !== 1 ? "s" : ""}</span>
+                        </span>
+                    </div>
+                `
+                el.appendChild(item)
+            }
+        }
+
+        function renderProviders(list) {
+            const el = document.getElementById("providers-list")
+            el.innerHTML = ""
+            if (!list || list.length === 0) {
+                el.innerHTML = '<span class="empty-msg">No providers</span>'
+                return
+            }
+            const maxKeys = Math.max(...list.map(p => p.keys), 1)
+            for (const p of list) {
+                const pct = Math.round((p.keys / maxKeys) * 100)
+                const item = document.createElement("div")
+                item.className = "row-item"
+                item.innerHTML = `
+                    <div class="row-icon">
+                        <span class="material-symbols-outlined" style="font-size:16px">storage</span>
+                    </div>
+                    <div class="row-info">
+                        <span class="row-name">${p.name}</span>
+                        <div class="bar-wrap"><div class="bar-fill" style="width:${pct}%"></div></div>
+                        <span class="row-meta">
+                            <span>${p.keys} key${p.keys !== 1 ? "s" : ""}</span>
+                            <span>${p.users} user${p.users !== 1 ? "s" : ""} with access</span>
+                        </span>
+                    </div>
+                    <span class="row-badge">${p.owner}</span>
+                `
+                el.appendChild(item)
+            }
+        }
+
+        async function loadStats() {
+            const res = await fetch("/api/stats", {
+                headers: { "Authorization": "Bearer " + localStorage.getItem("token") }
+            })
+            if (!res.ok) return
+            const s = await res.json()
+
+            set("s-uptime",   fmtUptime(Date.now() - s.start))
+            set("s-requests", fmtNum(s.requests))
+            set("s-rpm",      s.rpm)
+            set("s-avg-in",   fmtNum(s.requestAverageInput))
+            set("s-avg-out",  fmtNum(s.requestAverageOutput))
+
+            set("d-users",     s.users)
+            set("d-providers", s.providers)
+            set("d-keys",      s.totalKeys)
+            set("d-active",    s.activeKeysToday)
+            set("d-prompts",   s.prompts)
+            set("d-lorebooks", s.lorebooks)
+
+            renderPlugins(s.pluginUsage)
+            renderProviders(s.providerUsage)
+        }
+
+        loadStats()
+        auth.requireAdmin()
+    </script>
+</body>
+</html>
