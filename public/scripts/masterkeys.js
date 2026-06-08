@@ -186,9 +186,13 @@ async function submitModal() {
             card.dataset.models = JSON.stringify(models);
             card.dataset.contextWindows = JSON.stringify(contextWindows);
             card.dataset.poolMode = poolMode ? "1" : "0";
-            const modelsDisplay = models.length > 0
+            const modelsDisplay = 150 > (models.length > 0
                 ? models.map(m => contextWindows?.[m] ? `${m} (${Number(contextWindows[m]).toLocaleString()})` : m).join(", ")
-                : "All models";
+                : "All models").length
+                ? (models.length > 0
+                ? models.map(m => contextWindows?.[m] ? `${m} (${Number(contextWindows[m]).toLocaleString()})` : m).join(", ")
+                : "All models")
+                : "Too many models to display";
             card.querySelector(".models-text").textContent = modelsDisplay;
             const poolUsageCount = parseInt(card.dataset.poolUsageCount) || 0;
             const limitDisplay = limit > 0
