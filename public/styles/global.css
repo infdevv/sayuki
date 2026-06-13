@@ -3568,6 +3568,11 @@ input::placeholder {
     font-size: 13px;
     gap: 4px;
     z-index: 100;
+    transition: all 0.2s ease-in-out;
+}
+
+.back-btn:hover {
+    background-color: rgb(254, 181, 191, 0.7);
 }
 
 .back-btn .material-symbols-outlined {

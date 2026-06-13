@@ -89,7 +89,22 @@ function addKeyCard(mk) {
 }
 
 function copyCode(code) {
-    navigator.clipboard.writeText(code);
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(code).catch(() => fallbackCopy(code));
+    } else {
+        fallbackCopy(code);
+    }
+}
+
+function fallbackCopy(text) {
+    const el = document.createElement("textarea");
+    el.value = text;
+    el.style.cssText = "position:fixed;opacity:0;top:0;left:0;";
+    document.body.appendChild(el);
+    el.focus();
+    el.select();
+    try { document.execCommand("copy"); } catch (_) {}
+    document.body.removeChild(el);
 }
 
 function toggleKeyDetails(header) {
@@ -376,7 +391,8 @@ async function refreshAccessCode() {
     if (!confirm(`Refresh the access code for "${editingKey}"? The old code will stop working immediately.`)) return;
     const res = await fetch(`/api/masterkeys/${encodeURIComponent(editingKey)}/refreshCode`, {
         method: "POST",
-        headers: authHeaders()
+        headers: authHeaders(),
+        body: JSON.stringify({})
     });
     if (res.ok) {
         const { code } = await res.json();
