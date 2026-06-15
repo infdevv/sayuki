@@ -8,5 +8,6 @@ here's what to change to make it up to my standard, which is probably just the d
 
 - make upstream errors transparent
 - remove the fact that users have to be authorized to make provider keys
+- make the TOS legally binding instead of just a glorified rule sheet
 
 NOTE THAT THIS IS NOT DESIGNED ACCORDING TO HOW I'D DO IT. THIS WAS MADE FOLLOWING THE INSTRUCTIONS OF SAYUKI/VIX STAFF

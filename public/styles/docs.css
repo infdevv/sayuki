@@ -3,6 +3,13 @@
   top: 55%;
   position: absolute;
   text-align: left;
+  max-height: 100vh;
+  overflow-y: auto;
+  padding-right: 10px;
+}
+
+.dashboard::-webkit-scrollbar {
+  display: none;
 }
 
 .dashboard h4 {
