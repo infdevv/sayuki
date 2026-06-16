@@ -1,15 +1,19 @@
 .dashboard {
-  font-size: 15px;
-  top: 55%;
-  position: absolute;
-  text-align: left;
-  max-height: 100vh;
+  position: fixed !important;
+  top: 50% !important;
+  left: 50% !important;
+  transform: translate(-50%, -50%) !important;
+  max-height: calc(100vh - 120px) !important;
+  width: 90%;
+  max-width: 500px;
   overflow-y: auto;
+  overflow-x: hidden;
+  display: block !important;
+  text-align: left;
+  font-size: 15px;
+  padding: 20px;
   padding-right: 10px;
-}
-
-.dashboard::-webkit-scrollbar {
-  display: none;
+  box-sizing: border-box;
 }
 
 .dashboard h4 {
@@ -20,10 +24,17 @@
 
 .dashboard h5 {
   font-size: 16px;
-  margin: 0 0 10px 0;
+  margin: 20px 0 10px 0;
   color: rgba(254, 181, 191, 0.65);
   font-weight: 500;
   letter-spacing: 0.3px;
+}
+
+.dashboard h6 {
+  margin: 15px 0 5px 0;
+  font-size: 14px;
+  color: #feb5bf;
+  font-weight: 600;
 }
 
 .dashboard > span {
