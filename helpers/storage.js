@@ -386,20 +386,24 @@ function getModels(apiKey = null) {
     }
 
     const row = db.query(`
-        SELECT mk.models
+        SELECT mk.models, ak.master_key
         FROM api_keys ak
         JOIN master_keys mk ON ak.master_key = mk.name
         WHERE ak.token = ?
     `).get(apiKey);
 
-    const allowedModels = JSON.parse(row?.models || "[]");
-
-    if (allowedModels.length === 0) {
+    if (!row) {
         return db.query(baseSelect).all();
     }
 
+    const allowedModels = JSON.parse(row.models || "[]");
+
+    if (allowedModels.length === 0) {
+        return db.query(`${baseSelect} WHERE m.provider = ?`).all(row.master_key);
+    }
+
     const placeholders = allowedModels.map(() => "?").join(", ");
-    return db.query(`${baseSelect} WHERE m.name IN (${placeholders})`).all(...allowedModels);
+    return db.query(`${baseSelect} WHERE m.provider = ? AND m.name IN (${placeholders})`).all(row.master_key, ...allowedModels);
 }
 
 function getContextWindow(model, provider) {
