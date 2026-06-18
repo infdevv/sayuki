@@ -375,35 +375,36 @@ function editModeration(newConfig) {
 // ── Models ───────────────────────────────────────────────────────────────────
 
 function getModels(apiKey = null) {
-    const baseSelect = `
-        SELECT m.name, m.context_window AS contextWindow, m.owner, m.provider
-        FROM models m
-        LEFT JOIN master_keys mk ON mk.name = m.provider
-    `;
-
     if (!apiKey) {
-        return db.query(baseSelect).all();
+        const keys = db.query("SELECT name, owner, models, context_windows FROM master_keys").all();
+        const result = [];
+        for (const mk of keys) {
+            const modelNames = JSON.parse(mk.models || "[]");
+            const contextWindows = JSON.parse(mk.context_windows || "{}");
+            for (const name of modelNames) {
+                result.push({ name, provider: mk.name, owner: mk.owner, contextWindow: contextWindows[name] || 0 });
+            }
+        }
+        return result;
     }
 
     const row = db.query(`
-        SELECT mk.models, ak.master_key
+        SELECT mk.models, mk.context_windows, mk.name AS master_key, mk.owner
         FROM api_keys ak
         JOIN master_keys mk ON ak.master_key = mk.name
         WHERE ak.token = ?
     `).get(apiKey);
 
-    if (!row) {
-        return db.query(baseSelect).all();
-    }
+    if (!row) return [];
 
-    const allowedModels = JSON.parse(row.models || "[]");
-
-    if (allowedModels.length === 0) {
-        return db.query(`${baseSelect} WHERE m.provider = ?`).all(row.master_key);
-    }
-
-    const placeholders = allowedModels.map(() => "?").join(", ");
-    return db.query(`${baseSelect} WHERE m.provider = ? AND m.name IN (${placeholders})`).all(row.master_key, ...allowedModels);
+    const modelNames = JSON.parse(row.models || "[]");
+    const contextWindows = JSON.parse(row.context_windows || "{}");
+    return modelNames.map(name => ({
+        name,
+        provider: row.master_key,
+        owner: row.owner,
+        contextWindow: contextWindows[name] || 0
+    }));
 }
 
 function getContextWindow(model, provider) {
