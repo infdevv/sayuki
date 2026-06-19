@@ -116,11 +116,15 @@ async function scanChat(conversation, username, ip){
     try {
         aiReply = await callModerationModel(modConfig.apiModel)
     } catch (err) {
-        // primary model failed, fall back to a free model
         aiReply = await callModerationModel("meta-llama/llama-3.1-8b-instruct")
     }
 
+    if (aiReply == undefined || aiReply == null) {
+        throw new Error(`Moderation API error`)
+    }
+
     let result
+
     if (aiReply.choices[0].message.content.toUpperCase().includes("[BLOCK]") === false){
         result = { isFlagged: false, reason: "" }
     }
@@ -129,11 +133,11 @@ async function scanChat(conversation, username, ip){
         notifyDiscord(aiReply, username)
         result = { isFlagged: true, reason: aiReply }
     }
-
     if (resultCache.size >= MAX_CACHE_SIZE) {
         resultCache.delete(resultCache.keys().next().value) // evict oldest
     }
     resultCache.set(cacheKey, result)
+    
     return result
 }
 
