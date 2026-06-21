@@ -10,8 +10,8 @@ function addModelRow(name = "", contextWindow = "") {
     const row = document.createElement("div");
     row.className = "model-row";
     row.innerHTML = `
-        <input class="model-name" placeholder="model name">
-        <input class="model-cw" type="number" min="0" placeholder="context window">
+        <input class="model-name" placeholder="model name" style="max-width: 150px;">
+        <input class="model-cw" type="number" min="0" placeholder="context window" style="max-width: 150px;">
         <span class="material-symbols-outlined remove-model" onclick="this.closest('.model-row').remove()">close</span>
     `;
     row.querySelector(".model-name").value = name;
