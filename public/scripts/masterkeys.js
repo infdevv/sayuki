@@ -1,4 +1,5 @@
 let editingKey = null;
+let usageRows = [];
 
 function authHeaders() {
     return { "Authorization": "Bearer " + localStorage.getItem("token"), "Content-Type": "application/json" };
@@ -151,6 +152,10 @@ function openEditModal(name) {
     document.getElementById("mk-access-section").style.display = "";
     document.getElementById("mk-access-search").value = "";
     loadAccessUsers(name);
+    document.getElementById("mk-usage-section").style.display = "";
+    document.getElementById("mk-usage-search").value = "";
+    document.getElementById("mk-usage-sort").value = "usage-desc";
+    loadUsageForKey(name);
     document.getElementById("mk-modal").style.display = "flex";
 }
 
@@ -161,6 +166,8 @@ function clearForm() {
     document.getElementById("mk-models-list").innerHTML = "";
     document.getElementById("mk-pool-mode").value = "0";
     document.getElementById("mk-access-section").style.display = "none";
+    document.getElementById("mk-usage-section").style.display = "none";
+    usageRows = [];
 }
 
 function closeModal() {
@@ -360,6 +367,75 @@ async function loadAccessUsers(keyName) {
         btn.addEventListener("click", (e) => { revokeUserAccess(keyName, username); e.stopPropagation(); });
         list.appendChild(row);
     }
+}
+
+
+async function loadUsageForKey(keyName) {
+    const list = document.getElementById("mk-usage-list");
+    const summary = document.getElementById("mk-usage-summary");
+    list.innerHTML = `<span style="font-size:11px;color:rgba(254,181,191,0.4)">Loading...</span>`;
+    summary.textContent = "";
+
+    const res = await fetch(`/api/masterkeys/${encodeURIComponent(keyName)}/usage`, { headers: authHeaders() });
+    if (!res.ok) {
+        list.innerHTML = `<span style="font-size:11px;color:#ff6b6b">Failed to load usage</span>`;
+        return;
+    }
+
+    const data = await res.json();
+    usageRows = data.users || [];
+    summary.textContent = `${Number(data.totalUsage || 0).toLocaleString()} requests today${data.poolMode ? " (shared pool)" : ""}`;
+    renderUsageList();
+}
+
+function sortUsageRows(sortBy) {
+    const [field, direction] = sortBy.split("-");
+    const multiplier = direction === "asc" ? 1 : -1;
+    usageRows.sort((a, b) => {
+        if (field === "username") return a.username.localeCompare(b.username) * multiplier;
+        if (field === "keys") return ((a.keyCount || 0) - (b.keyCount || 0)) * multiplier || a.username.localeCompare(b.username);
+        return ((a.usageCount || 0) - (b.usageCount || 0)) * multiplier || a.username.localeCompare(b.username);
+    });
+}
+
+function renderUsageList() {
+    const list = document.getElementById("mk-usage-list");
+    sortUsageRows(document.getElementById("mk-usage-sort").value || "usage-desc");
+    list.innerHTML = "";
+
+    if (usageRows.length === 0) {
+        list.innerHTML = `<span style="font-size:11px;color:rgba(254,181,191,0.4)">No subkeys for this provider yet</span>`;
+        return;
+    }
+
+    for (const user of usageRows) {
+        const row = document.createElement("div");
+        row.className = "mk-usage-row";
+        row.dataset.username = user.username;
+        row.innerHTML = `
+            <span class="mk-user-name"></span>
+            <span class="mk-usage-meta"></span>
+            <span class="mk-usage-count"></span>
+        `;
+        row.querySelector(".mk-user-name").textContent = user.username;
+        row.querySelector(".mk-usage-meta").textContent = `${user.keyCount || 0} key${user.keyCount === 1 ? "" : "s"}`;
+        row.querySelector(".mk-usage-count").textContent = Number(user.usageCount || 0).toLocaleString();
+        list.appendChild(row);
+    }
+
+    filterUsageList(document.getElementById("mk-usage-search").value);
+}
+
+function sortUsageList(sortBy) {
+    sortUsageRows(sortBy);
+    renderUsageList();
+}
+
+function filterUsageList(query) {
+    const q = query.trim().toLowerCase();
+    document.querySelectorAll("#mk-usage-list .mk-usage-row").forEach(row => {
+        row.style.display = !q || row.dataset.username.toLowerCase().includes(q) ? "" : "none";
+    });
 }
 
 function filterAccessList(query) {

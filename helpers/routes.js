@@ -25,6 +25,7 @@ const {
     editMasterKey,
     deleteMasterKey,
     getMasterKeys,
+    getMasterKeyUsage,
     getOwnedMasterKeys,
     getModels,
     getApiKeys,
@@ -569,6 +570,13 @@ module.exports = function (fastify, opts, done) {
         return reply.code(result.worked ? 200 : 400).send(result)
     })
 
+
+    fastify.get("/api/masterkeys/:name/usage", async (request, reply) => {
+        if (!isAuthed(request)) return reply.code(401).send({ error: "Unauthorized" })
+        const username = getUserFromRequest(request)
+        const result = getMasterKeyUsage(request.params.name, username)
+        return reply.code(result.worked ? 200 : (result.message === "Forbidden" ? 403 : 404)).send(result)
+    })
     fastify.get("/api/masterkeys/:name/users", async (request, reply) => {
         if (!isAuthed(request)) return reply.code(401).send({ error: "Unauthorized" })
         const username = getUserFromRequest(request)

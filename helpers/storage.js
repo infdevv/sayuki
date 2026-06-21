@@ -10,7 +10,7 @@ const db = new Database(DB_PATH, { create: true });
 db.run("PRAGMA journal_mode = WAL");
 db.run("PRAGMA foreign_keys = ON");
 
-// ── Schema ───────────────────────────────────────────────────────────────────
+// -- Schema -------------------------------------------------------------------
 
 db.run(`CREATE TABLE IF NOT EXISTS users (
     username      TEXT PRIMARY KEY,
@@ -145,7 +145,7 @@ db.run(`CREATE TABLE IF NOT EXISTS models (
 )`);
 
 
-// ── Limits ───────────────────────────────────────────────────────────────────
+// -- Limits -------------------------------------------------------------------
 
 const LIMITS = {
     username:        32,
@@ -172,7 +172,7 @@ function enforce(value, field) {
         throw Object.assign(new Error(`${field} exceeds maximum length of ${max}`), { limitExceeded: true, field });
 }
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
+// -- Helpers ------------------------------------------------------------------
 
 function hash(item) {
     return crypto.createHash("sha256").update(item).digest("hex");
@@ -182,7 +182,7 @@ function now() {
     return Math.floor(Date.now() / 1000);
 }
 
-// ── Users ────────────────────────────────────────────────────────────────────
+// -- Users --------------------------------------------------------------------
 
 function userExists(username) {
     return !!db.query("SELECT 1 FROM users WHERE username = ?").get(username);
@@ -200,7 +200,7 @@ function isOwner(username) {
 function getUserByToken(token) {
     if (!token) return null;
     // Reject non-canonical tokens: token MUST be exactly 64 hex chars (SHA-256 digest).
-    // This kills localStorage token-manipulation POCs dead — any crafted/encoded
+    // This kills localStorage token-manipulation POCs dead - any crafted/encoded
     // payload (e.g. base64, split("-") tricks) won't match /^[a-f0-9]{64}$/.
     if (!/^[a-f0-9]{64}$/.test(token)) return null;
     const row = db.query("SELECT username, is_admin, is_banned, token_issued FROM users WHERE token = ?").get(token);
@@ -316,7 +316,7 @@ function setUserProvider(username, makeProvider) {
     return { worked: true };
 }
 
-// ── Excluded users ───────────────────────────────────────────────────────────
+// -- Excluded users -----------------------------------------------------------
 
 function getExcludedUsers(masterKeyName, requestingUser) {
     const row = db.query("SELECT owner, excluded_users FROM master_keys WHERE name = ?").get(masterKeyName);
@@ -351,7 +351,7 @@ function removeExcludedUser(masterKeyName, username, requestingUser) {
     return { worked: true };
 }
 
-// ── Config ───────────────────────────────────────────────────────────────────
+// -- Config -------------------------------------------------------------------
 
 function getConfig(key) {
     return db.query("SELECT value FROM config WHERE key = ?").get(key)?.value ?? null;
@@ -381,7 +381,7 @@ function editModeration(newConfig) {
     }
 }
 
-// ── Models ───────────────────────────────────────────────────────────────────
+// -- Models -------------------------------------------------------------------
 
 function getModels(apiKey = null) {
     if (!apiKey) {
@@ -421,7 +421,7 @@ function getContextWindow(model, provider) {
         .get(model, provider)?.context_window ?? null;
 }
 
-// ── Master keys ──────────────────────────────────────────────────────────────
+// -- Master keys --------------------------------------------------------------
 
 function createMasterKey(name, key, url, provider, limit, models, owner, contextWindows, poolMode) {
     try {
@@ -494,6 +494,36 @@ function getMasterKeys(requestingUser) {
     }));
 }
 
+function getMasterKeyUsage(masterKeyName, requestingUser) {
+    const mk = db.query("SELECT owner, pool_mode, pool_usage_date, pool_usage_count FROM master_keys WHERE name = ?").get(masterKeyName);
+    if (!mk) return { worked: false, message: "Not found" };
+    if (mk.owner !== requestingUser && !isAdmin(requestingUser)) return { worked: false, message: "Forbidden" };
+
+    const today = new Date().toISOString().slice(0, 10);
+    const rows = db.query(`
+        SELECT owner AS username,
+               COUNT(*) AS key_count,
+               SUM(CASE WHEN usage_date = ? THEN usage_count ELSE 0 END) AS usage_count
+        FROM api_keys
+        WHERE master_key = ?
+        GROUP BY owner
+        ORDER BY usage_count DESC, username ASC
+    `).all(today, masterKeyName);
+
+    return {
+        worked: true,
+        date: today,
+        poolMode: mk.pool_mode === 1,
+        totalUsage: mk.pool_mode === 1
+            ? (mk.pool_usage_date === today ? (mk.pool_usage_count ?? 0) : 0)
+            : rows.reduce((sum, row) => sum + (row.usage_count ?? 0), 0),
+        users: rows.map(row => ({
+            username: row.username,
+            keyCount: row.key_count ?? 0,
+            usageCount: row.usage_count ?? 0
+        }))
+    };
+}
 function getOwnedMasterKeys(username) {
     return db.query("SELECT * FROM master_keys WHERE owner = ?").all(username).map(r => ({
         name: r.name,
@@ -508,7 +538,7 @@ function getOwnedMasterKeys(username) {
     }));
 }
 
-// ── Access codes ─────────────────────────────────────────────────────────────
+// -- Access codes -------------------------------------------------------------
 
 function redeemMasterKeyCode(code, user) {
     const mk = db.query("SELECT name, excluded_users FROM master_keys WHERE code = ?").get(code);
@@ -542,7 +572,7 @@ function getUserAccessibleMasterKeys(user) {
     }));
 }
 
-// ── API keys ─────────────────────────────────────────────────────────────────
+// -- API keys -----------------------------------------------------------------
 
 function validateKey(token) {
     const row = db.query(`
@@ -725,10 +755,12 @@ function checkAndIncrementUsage(masterKeyName, userKeyToken) {
     if (mk.pool_mode === 1) {
         if (mk.pool_usage_date !== today) {
             db.run("UPDATE master_keys SET pool_usage_date = ?, pool_usage_count = 1 WHERE name = ?", [today, masterKeyName]);
+            resetAndIncrementApiKeyUsage(userKeyToken, today);
             return true;
         }
         if (limit > 0 && mk.pool_usage_count >= limit) return false;
         db.run("UPDATE master_keys SET pool_usage_count = pool_usage_count + 1 WHERE name = ?", [masterKeyName]);
+        resetAndIncrementApiKeyUsage(userKeyToken, today);
         return true;
     }
 
@@ -746,7 +778,16 @@ function checkAndIncrementUsage(masterKeyName, userKeyToken) {
     return true;
 }
 
-// ── Prompts ──────────────────────────────────────────────────────────────────
+function resetAndIncrementApiKeyUsage(userKeyToken, today) {
+    const row = db.query("SELECT usage_date FROM api_keys WHERE token = ?").get(userKeyToken);
+    if (!row) return;
+    if (row.usage_date !== today) {
+        db.run("UPDATE api_keys SET usage_date = ?, usage_count = 1 WHERE token = ?", [today, userKeyToken]);
+        return;
+    }
+    db.run("UPDATE api_keys SET usage_count = usage_count + 1 WHERE token = ?", [userKeyToken]);
+}
+// -- Prompts ------------------------------------------------------------------
 
 function getPrompts(viewer = null) {
     const rows = db.query(
@@ -788,7 +829,7 @@ function findPromptOwner(name) {
     return db.query("SELECT creator FROM prompts WHERE name = ?").get(name)?.creator ?? null;
 }
 
-// ── Lorebooks ────────────────────────────────────────────────────────────────
+// -- Lorebooks ----------------------------------------------------------------
 
 function getLorebooks() {
     return db.query("SELECT name, owner, description FROM lorebooks").all();
@@ -819,7 +860,7 @@ function findLorebookOwner(name) {
     return db.query("SELECT owner FROM lorebooks WHERE name = ?").get(name)?.owner ?? null;
 }
 
-// ── Logs ─────────────────────────────────────────────────────────────────────
+// -- Logs ---------------------------------------------------------------------
 
 const AUDIT_LOG_LIMIT = 150;
 
@@ -906,11 +947,11 @@ function getDbCounts() {
     return { users, prompts, lorebooks, providers, totalKeys, activeKeysToday, pluginUsage, providerUsage }
 }
 
-// ── Stubs ────────────────────────────────────────────────────────────────────
+// -- Stubs --------------------------------------------------------------------
 
 function getUserProviders() { return []; }
 
-// ── Shutdown ─────────────────────────────────────────────────────────────────
+// -- Shutdown -----------------------------------------------------------------
 
 process.on("SIGINT", () => {
     console.log("Closing SQLite database");
@@ -973,6 +1014,7 @@ module.exports = {
     editMasterKey,
     deleteMasterKey,
     getMasterKeys,
+    getMasterKeyUsage,
     getOwnedMasterKeys,
     getApiKeys,
     createApiKey,
@@ -1003,3 +1045,5 @@ module.exports = {
     revokeMasterKeyAccess,
     refreshMasterKeyCode
 };
+
+

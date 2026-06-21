@@ -1,8 +1,10 @@
+// fuck you no comments
+
 const storageAPI = require("../storage.js")
 const { pluginMap } = require("./plugins.js")
 
 function countTokens(conversation){
-    let estimate = 0 // 0 tokens as baseline
+    let estimate = 0
 
     for (turn of conversation){
         estimate += (turn.content).length / 3
@@ -14,7 +16,6 @@ function countTokens(conversation){
 function adjustToWindow(conversation, contextWindow){
     if (!contextWindow) return conversation
 
-    // i know this is shit rn, will be more sophisticated later
     // get system / first user message
     let firstMessage = conversation[0].content
 
@@ -41,32 +42,27 @@ function preprocess(conversation, lorebooks, prompts, plugins, contextWindow){
         for (lorebook of lorebooks){
             lorebook = storageAPI.getLorebook(lorebook)
 
-            // SillyTavern exports entries as a UID-keyed object; normalize to array
             let entries = lorebook["entries"]
             if (!Array.isArray(entries)) entries = Object.values(entries)
 
             for (entry of entries){
                 if (entry["disable"] || entry["disabled"]) continue
 
-                // Always-inject constant entries skip keyword scanning
                 if (entry["constant"]) {
                     conversation[0].content += "\n" + entry["content"] + "\n"
                     continue
                 }
 
-                // Probabilistic injection
                 if (entry["useProbability"] && entry["probability"] != null){
                     if (Math.random() * 100 > entry["probability"]) continue
                 }
 
-                // Keys: SillyTavern uses key[] array, legacy uses triggers string
                 const keys = Array.isArray(entry["key"])
                     ? entry["key"]
                     : (entry["triggers"] ?? "").split(",").map(s => s.trim()).filter(Boolean)
 
                 if (keys.length === 0) continue
 
-                // Scan depth: how many recent messages to check (SillyTavern: scanDepth; fallback: 1)
                 const depth = entry["scanDepth"] ?? entry["depth"] ?? 1
                 const scanMessages = conversation.slice(-depth).map(m => m.content)
                 const haystack = scanMessages.join("\n")
@@ -78,7 +74,6 @@ function preprocess(conversation, lorebooks, prompts, plugins, contextWindow){
                 const primaryMatch = keys.some(k => normalizedHaystack.includes(normalize(k.trim())))
                 if (!primaryMatch) continue
 
-                // Selective mode: secondary keys must also match
                 if (entry["selective"]){
                     const secondary = Array.isArray(entry["keysecondary"]) ? entry["keysecondary"] : []
                     if (secondary.length > 0){

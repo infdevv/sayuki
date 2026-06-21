@@ -96,6 +96,22 @@
                     <input id="mk-user-search" placeholder="search users" oninput="filterUsersList(this.value)" style="height:32px;font-size:12px;border-radius:8px;padding:4px 10px;margin-top:0;text-align:left;">
                     <div id="mk-users-list"></div>
                 </div>
+                <div id="mk-usage-section" style="display:none;">
+                    <hr style="border:none;border-top:1px solid rgba(254,181,191,0.2);margin:6px 0;">
+                    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:4px;">
+                        <label class="modal-label" style="margin-bottom:0;">Usage by User</label>
+                        <select id="mk-usage-sort" onchange="sortUsageList(this.value)" style="height:28px;font-size:11px;border-radius:8px;padding:0 8px;max-width:140px;">
+                            <option value="usage-desc">Usage high-low</option>
+                            <option value="usage-asc">Usage low-high</option>
+                            <option value="username-asc">User A-Z</option>
+                            <option value="username-desc">User Z-A</option>
+                            <option value="keys-desc">Keys high-low</option>
+                        </select>
+                    </div>
+                    <input id="mk-usage-search" placeholder="search usage" oninput="filterUsageList(this.value)" style="height:32px;font-size:12px;border-radius:8px;padding:4px 10px;margin-top:0;text-align:left;">
+                    <div id="mk-usage-summary"></div>
+                    <div id="mk-usage-list"></div>
+                </div>
                 <div id="mk-access-section" style="display:none;">
                     <hr style="border:none;border-top:1px solid rgba(254,181,191,0.2);margin:6px 0;">
                     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
@@ -118,3 +134,4 @@
     <script src="scripts/masterkeys.js"></script>
 </body>
 </html>
+
