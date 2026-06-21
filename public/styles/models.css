@@ -12,6 +12,8 @@
     flex-wrap: wrap;
     height: calc(100vh - 260px);
     overflow-y: auto;
+    justify-content: center;
+    align-items: center;
     align-content: flex-start;
 }
 
@@ -28,6 +30,7 @@
     justify-content: center;
     display: flex;
     flex-direction: column;
+    max-width: 750px;
     align-items: center;
 }
 

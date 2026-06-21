@@ -163,8 +163,10 @@ module.exports = function (fastify, opts, done) {
     })
 
     fastify.get("/api/getPrompts", async (request, reply) => {
-        if (!isAuthed(request)) return
-        return reply.send(getPrompts())
+        const bearer = request.headers.authorization
+        const rawToken = bearer ? bearer.split(" ")[1] : null
+        const viewer = getUserByToken(rawToken)?.username ?? null
+        return reply.send(getPrompts(viewer))
     })
 
     fastify.get("/api/users/resetPassword", async (request, reply) => {
@@ -259,10 +261,10 @@ module.exports = function (fastify, opts, done) {
     fastify.post("/api/createPrompt", async (request, reply) => {
         if (!isAuthed(request)) return reply.code(401).send({ error: "Unauthorized" })
         const username = getUserFromRequest(request)
-        let { name, description, content, apiKey } = request.body
+        let { name, description, content, apiKey, isContentPublic } = request.body
         name = name.replace("\"","''")
         try {
-            addPrompt(name, content, description, username)
+            addPrompt(name, content, description, username, isContentPublic === true)
             if (apiKey) {
                 addPromptToApiKey(apiKey, name)
             }
@@ -291,16 +293,16 @@ module.exports = function (fastify, opts, done) {
     fastify.put("/api/editPrompt", async (request, reply) => {
         if (!isAuthed(request)) return reply.code(401).send({ error: "Unauthorized" })
         const username = getUserFromRequest(request)
-        const { name, description, content, apiKey } = request.body
+        const { name, description, content, apiKey, isContentPublic } = request.body
         const owner = findPromptOwner(name)
         if (!owner) return reply.code(404).send({ error: "Prompt not found" })
         if (owner !== username && !isAdmin(username)) return reply.code(403).send({ error: "Forbidden" })
         try {
-            editPrompt(name, description, content, owner)
+            editPrompt(name, description, content, isContentPublic === true)
             if (apiKey) {
                 addPromptToApiKey(apiKey, name)
             }
-            if (owner !== username) logItem(`Edited prompt: ${name} (owner: ${owner})`, "audit", username, request.ip)
+            if (owner !== username) logItem("Edited prompt: " + name + " (owner: " + owner + ")", "audit", username, request.ip)
             return reply.send({ ok: true })
         } catch (e) {
             return reply.code(400).send({ error: e.message })
@@ -493,7 +495,6 @@ module.exports = function (fastify, opts, done) {
         if (!promptName || !apiKey) return reply.code(400).send({ error: "promptName and apiKey are required" })
 
         if (!findPromptOwner(promptName)) return reply.code(404).send({ error: "Prompt not found" })
-
         const keyOwner = getApiKeys(username).find(k => k.key === apiKey)
         if (!keyOwner) return reply.code(404).send({ error: "API key not found" })
 

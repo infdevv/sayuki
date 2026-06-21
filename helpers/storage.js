@@ -30,6 +30,7 @@ db.run(`CREATE TABLE IF NOT EXISTS prompts (
     creator     TEXT NOT NULL,
     description TEXT NOT NULL DEFAULT '',
     prompt      TEXT NOT NULL DEFAULT '',
+    content_public INTEGER NOT NULL DEFAULT 0,
     created_at  INTEGER NOT NULL DEFAULT 0
 )`);
 
@@ -110,6 +111,14 @@ try {
 
 try {
     db.run(`ALTER TABLE users ADD COLUMN is_provider INTEGER NOT NULL DEFAULT 0`);
+} catch (e) {}
+
+try {
+    db.run(`ALTER TABLE prompts ADD COLUMN content_public INTEGER NOT NULL DEFAULT 0`);
+} catch (e) {}
+
+try {
+    db.run(`UPDATE prompts SET content_public = is_public WHERE content_public = 0`);
 } catch (e) {}
 
 db.run(`CREATE TABLE IF NOT EXISTS master_key_access (
@@ -554,10 +563,9 @@ function validateKey(token) {
     const lorebookNames = JSON.parse(row.lorebook_names || "[]");
     const pluginNames = JSON.parse(row.plugin_names || "[]");
 
-    // Get prompt contents for the associated prompts
-    const allPrompts = getPrompts();
+    // Attached prompts remain usable even when their content is hidden in the public list.
     const prompts = promptNames
-        .map(name => allPrompts.find(p => p.name === name)?.content)
+        .map(name => db.query("SELECT prompt FROM prompts WHERE name = ?").get(name)?.prompt)
         .filter(Boolean);
 
     // Get lorebook names for the associated lorebooks
@@ -740,25 +748,36 @@ function checkAndIncrementUsage(masterKeyName, userKeyToken) {
 
 // ── Prompts ──────────────────────────────────────────────────────────────────
 
-function getPrompts() {
-    return db.query("SELECT name, creator AS owner, description, prompt AS content FROM prompts").all();
+function getPrompts(viewer = null) {
+    const rows = db.query(
+        "SELECT name, creator AS owner, description, prompt AS content, content_public AS isContentPublic FROM prompts"
+    ).all();
+    const canSeeAllContent = viewer && isAdmin(viewer);
+    return rows.map(row => {
+        const canSeeContent = canSeeAllContent || row.owner === viewer || row.isContentPublic === 1;
+        return {
+            ...row,
+            content: canSeeContent ? row.content : "",
+            canSeeContent
+        };
+    });
 }
 
-function addPrompt(promptName, prompt, description, username) {
+function addPrompt(promptName, prompt, description, username, isContentPublic = false) {
     enforce(promptName, "name");
     enforce(description, "description");
     enforce(prompt, "prompt");
     db.run(
-        "INSERT INTO prompts (name, creator, description, prompt, created_at) VALUES (?, ?, ?, ?, ?)",
-        [promptName, username, cleanHTML(description), prompt, now()]
+        "INSERT INTO prompts (name, creator, description, prompt, content_public, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+        [promptName, username, cleanHTML(description), prompt, isContentPublic ? 1 : 0, now()]
     );
 }
 
-function editPrompt(name, description, content) {
+function editPrompt(name, description, content, isContentPublic = false) {
     enforce(description, "description");
     enforce(content, "prompt");
-    db.run("UPDATE prompts SET description = ?, prompt = ? WHERE name = ?",
-        [cleanHTML(description), content, name]);
+    db.run("UPDATE prompts SET description = ?, prompt = ?, content_public = ? WHERE name = ?",
+        [cleanHTML(description), content, isContentPublic ? 1 : 0, name]);
 }
 
 function deletePrompt(name) {

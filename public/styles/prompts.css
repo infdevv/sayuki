@@ -6,7 +6,7 @@
 }
 
 .prompts {
-    width: 100%;
+    width: 60%;
     margin: 0;
     display: flex;
     flex-wrap: wrap;
@@ -32,6 +32,7 @@
     align-items: center;
     justify-content: flex-start;
     display: flex;
+    backdrop-filter: blur(2px);
     flex-direction: column;
 }
 
@@ -209,4 +210,17 @@ button:hover {
 .modal-import-btn {
     width: 100%;
     font-size: 16px;
+}
+
+.prompts-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    justify-content: center;
+}
+
+#view-prompt-content {
+    min-height: 260px;
+    resize: vertical;
 }
