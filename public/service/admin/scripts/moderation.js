@@ -75,9 +75,8 @@ function renderConversation(conversation) {
         const text = Array.isArray(msg.content)
             ? msg.content.filter(p => p.type === "text").map(p => p.text).join(" ")
             : (typeof msg.content === "string" ? msg.content : "")
-        const short = text.length > 300 ? text.slice(0, 300) + "…" : text
         const roleColor = role === "user" ? "#feb5bf" : "rgba(254,181,191,0.55)"
-        return `<div style="margin:6px 0"><span style="font-size:10px;text-transform:uppercase;letter-spacing:0.5px;color:${roleColor};font-weight:600">${role}</span><br><span style="font-size:12px;opacity:0.85;white-space:pre-wrap">${short.replace(/</g,"&lt;")}</span></div>`
+        return `<div style="margin:6px 0"><span style="font-size:10px;text-transform:uppercase;letter-spacing:0.5px;color:${roleColor};font-weight:600">${role}</span><br><span style="font-size:12px;opacity:0.85;white-space:pre-wrap">${text.replace(/</g,"&lt;")}</span></div>`
     }).join('<hr style="border-color:rgba(254,181,191,0.15);margin:4px 0">')
 }
 
