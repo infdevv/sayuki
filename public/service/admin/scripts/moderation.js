@@ -70,7 +70,7 @@ async function banUser(username, btn) {
 
 function renderConversation(conversation) {
     if (!Array.isArray(conversation) || conversation.length === 0) return "<em style='opacity:0.5'>No conversation recorded</em>"
-    return conversation.slice(1).map(msg => {
+    return conversation.map(msg => {
         const role = msg.role ?? "?"
         const text = Array.isArray(msg.content)
             ? msg.content.filter(p => p.type === "text").map(p => p.text).join(" ")
