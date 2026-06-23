@@ -72,6 +72,23 @@ db.run(`CREATE TABLE IF NOT EXISTS api_keys (
     plugin_names TEXT NOT NULL DEFAULT '[]'
 )`);
 
+
+db.run(`CREATE TABLE IF NOT EXISTS user_master_key_usage (
+    username        TEXT NOT NULL,
+    master_key_name TEXT NOT NULL,
+    usage_date      TEXT NOT NULL DEFAULT '',
+    usage_count     INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (username, master_key_name)
+)`);
+
+db.run(`
+    INSERT OR IGNORE INTO user_master_key_usage (username, master_key_name, usage_date, usage_count)
+    SELECT owner, master_key, usage_date, SUM(usage_count)
+    FROM api_keys
+    WHERE usage_date = date('now')
+    GROUP BY owner, master_key, usage_date
+`);
+
 // Add columns if they don't exist (for existing databases)
 try {
     db.run(`ALTER TABLE api_keys ADD COLUMN prompt_names TEXT NOT NULL DEFAULT '[]'`);
@@ -473,6 +490,7 @@ function deleteMasterKey(name, requestingUser) {
 
     db.run("DELETE FROM master_keys WHERE name = ?", [name]);
     db.run("DELETE FROM master_key_access WHERE master_key_name = ?", [name]);
+    db.run("DELETE FROM user_master_key_usage WHERE master_key_name = ?", [name]);
     return { worked: true };
 }
 
@@ -500,21 +518,36 @@ function getMasterKeyUsage(masterKeyName, requestingUser) {
     if (mk.owner !== requestingUser && !isAdmin(requestingUser)) return { worked: false, message: "Forbidden" };
 
     const today = new Date().toISOString().slice(0, 10);
-    const rows = db.query(`
-        SELECT owner AS username,
-               COUNT(*) AS key_count,
-               SUM(CASE WHEN usage_date = ? THEN usage_count ELSE 0 END) AS usage_count
-        FROM api_keys
-        WHERE master_key = ?
-        GROUP BY owner
-        ORDER BY usage_count DESC, username ASC
-    `).all(today, masterKeyName);
+    const isPool = mk.pool_mode === 1;
+    const rows = isPool
+        ? db.query(`
+            SELECT owner AS username,
+                   COUNT(*) AS key_count,
+                   SUM(CASE WHEN usage_date = ? THEN usage_count ELSE 0 END) AS usage_count
+            FROM api_keys
+            WHERE master_key = ?
+            GROUP BY owner
+            ORDER BY usage_count DESC, username ASC
+        `).all(today, masterKeyName)
+        : db.query(`
+            SELECT ak.owner AS username,
+                   COUNT(*) AS key_count,
+                   COALESCE(umku.usage_count, 0) AS usage_count
+            FROM api_keys ak
+            LEFT JOIN user_master_key_usage umku
+              ON umku.username = ak.owner
+             AND umku.master_key_name = ak.master_key
+             AND umku.usage_date = ?
+            WHERE ak.master_key = ?
+            GROUP BY ak.owner
+            ORDER BY usage_count DESC, username ASC
+        `).all(today, masterKeyName);
 
     return {
         worked: true,
         date: today,
-        poolMode: mk.pool_mode === 1,
-        totalUsage: mk.pool_mode === 1
+        poolMode: isPool,
+        totalUsage: isPool
             ? (mk.pool_usage_date === today ? (mk.pool_usage_count ?? 0) : 0)
             : rows.reduce((sum, row) => sum + (row.usage_count ?? 0), 0),
         users: rows.map(row => ({
@@ -622,9 +655,13 @@ function getApiKeys(user) {
     return db.query(`
         SELECT ak.token, ak.master_key, ak.provider, ak.created_at,
                ak.usage_date, ak.usage_count, ak.prompt_names, ak.lorebook_names,
-               ak.plugin_names, mk.limit_per_day, mk.pool_mode, mk.pool_usage_date, mk.pool_usage_count
+               ak.plugin_names, mk.limit_per_day, mk.pool_mode, mk.pool_usage_date, mk.pool_usage_count,
+               umku.usage_date AS user_usage_date, umku.usage_count AS user_usage_count
         FROM api_keys ak
         LEFT JOIN master_keys mk ON ak.master_key = mk.name
+        LEFT JOIN user_master_key_usage umku
+          ON umku.username = ak.owner
+         AND umku.master_key_name = ak.master_key
         WHERE ak.owner = ?
     `).all(user).map(r => {
         const isPool = r.pool_mode === 1;
@@ -635,17 +672,16 @@ function getApiKeys(user) {
             createdAt: r.created_at,
             limit: r.limit_per_day ?? 0,
             poolMode: isPool,
-            usageDate: isPool ? (r.pool_usage_date ?? null) : (r.usage_date ?? null),
+            usageDate: isPool ? (r.pool_usage_date ?? null) : (r.user_usage_date ?? null),
             usageCount: isPool
                 ? (r.pool_usage_date === today ? (r.pool_usage_count ?? 0) : 0)
-                : (r.usage_count ?? 0),
+                : (r.user_usage_date === today ? (r.user_usage_count ?? 0) : 0),
             promptNames: JSON.parse(r.prompt_names || '[]'),
             lorebookNames: JSON.parse(r.lorebook_names || '[]'),
             pluginNames: JSON.parse(r.plugin_names || '[]')
         };
     });
 }
-
 function createApiKey(masterKeyName, owner) {
     if (!db.query("SELECT 1 FROM master_key_access WHERE username = ? AND master_key_name = ?").get(owner, masterKeyName))
         return { worked: false, message: "No access to this master key" };
@@ -749,7 +785,9 @@ function removePluginFromApiKey(keyToken, pluginName) {
 function checkAndIncrementUsage(masterKeyName, userKeyToken) {
     const mk = db.query("SELECT limit_per_day, pool_mode, pool_usage_date, pool_usage_count FROM master_keys WHERE name = ?")
         .get(masterKeyName);
-    const limit = mk?.limit_per_day ?? 0;
+    if (!mk) return true;
+
+    const limit = mk.limit_per_day ?? 0;
     const today = new Date().toISOString().slice(0, 10);
 
     if (mk.pool_mode === 1) {
@@ -764,17 +802,35 @@ function checkAndIncrementUsage(masterKeyName, userKeyToken) {
         return true;
     }
 
-    const row = db.query("SELECT usage_date, usage_count FROM api_keys WHERE token = ?").get(userKeyToken);
-    if (!row) return true;
+    const key = db.query("SELECT owner FROM api_keys WHERE token = ? AND master_key = ?").get(userKeyToken, masterKeyName);
+    if (!key) return true;
 
-    if (row.usage_date !== today) {
-        db.run("UPDATE api_keys SET usage_date = ?, usage_count = 1 WHERE token = ?", [today, userKeyToken]);
+    const usage = db.query(`
+        SELECT usage_date, usage_count
+        FROM user_master_key_usage
+        WHERE username = ? AND master_key_name = ?
+    `).get(key.owner, masterKeyName);
+
+    if (!usage || usage.usage_date !== today) {
+        db.run(`
+            INSERT INTO user_master_key_usage (username, master_key_name, usage_date, usage_count)
+            VALUES (?, ?, ?, 1)
+            ON CONFLICT(username, master_key_name) DO UPDATE SET
+                usage_date = excluded.usage_date,
+                usage_count = excluded.usage_count
+        `, [key.owner, masterKeyName, today]);
+        resetAndIncrementApiKeyUsage(userKeyToken, today);
         return true;
     }
 
-    if (limit > 0 && row.usage_count >= limit) return false;
+    if (limit > 0 && usage.usage_count >= limit) return false;
 
-    db.run("UPDATE api_keys SET usage_count = usage_count + 1 WHERE token = ?", [userKeyToken]);
+    db.run(`
+        UPDATE user_master_key_usage
+        SET usage_count = usage_count + 1
+        WHERE username = ? AND master_key_name = ?
+    `, [key.owner, masterKeyName]);
+    resetAndIncrementApiKeyUsage(userKeyToken, today);
     return true;
 }
 
