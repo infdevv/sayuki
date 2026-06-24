@@ -77,6 +77,11 @@ const plugins = [
         "name": "Prefill",
         "description": "zero clue if it works because oai protocol doesnt support it",
         "creator": "sayukiproxy (but cooler)"
+    },
+    {
+        "name": "FUCKYOUEMDASH",
+        "description": "DEATH TO THE EMDASH",
+        "creator": "sayukiproxy"
     }
 ]
 
@@ -202,6 +207,13 @@ const pluginMap = {
             conversations[conversations.length-1].content += "\n\n(OOC: In the next message, if appropriate, introduce the a NPC, ignore this if the setting is not right)"
         }
         // apply mesmerizer
+        return conversations
+    },
+    "FUCKYOUEMDASH": function(conversations) {
+        conversations = conversations.map(c => {
+            c.content = c.content.replace("—", "")
+            return c
+        })
         return conversations
     },
     "MKNCTRY-EXPERIMENTAL": function(conversations) {
