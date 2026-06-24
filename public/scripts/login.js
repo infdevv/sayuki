@@ -7,35 +7,51 @@ document.querySelectorAll("input").forEach(inp => {
 async function attemptLogin() {
     const username = document.querySelector('input[type="text"]').value;
     const password = document.querySelector('input[type="password"]').value;
+    const warning = document.getElementById("warning");
 
     if (!username || !password) {
-        document.getElementById("warning").innerText = "Both username and password must be filled out";
+        warning.innerText = "Both username and password must be filled out";
         return;
     }
 
-    let results = await fetch("/api/users/signIn", {
-        body: JSON.stringify({ username, password }),
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-    }).then(res => res);
+    warning.innerText = "";
 
-    if (results == "invalid") {
-        document.getElementById("warning").innerHTML = "Invalid username / password";
-        return;
-    }
+    try {
+        const response = await fetch("/api/users/signIn", {
+            body: JSON.stringify({ username, password }),
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+        });
 
-    res = res.json();
+        const results = await response.json();
 
-    if (results[1] === "must_reset") {
+        if (results === "invalid") {
+            warning.innerText = "Invalid username / password";
+            return;
+        }
+
+        if (results === "banned") {
+            warning.innerText = "This account has been banned";
+            return;
+        }
+
+        if (!Array.isArray(results) || !results[0]) {
+            warning.innerText = "Login failed. Please try again.";
+            return;
+        }
+
         localStorage.setItem("token", results[0]);
         localStorage.setItem("username", username);
-        showResetForm();
-        return;
-    }
 
-    localStorage.setItem("token", results[0]);
-    localStorage.setItem("username", username);
-    document.location = "./dashboard";
+        if (results[1] === "must_reset") {
+            showResetForm();
+            return;
+        }
+
+        document.location = "./dashboard";
+    } catch {
+        warning.innerText = "Login failed. Please try again.";
+    }
 }
 
 function showResetForm() {
