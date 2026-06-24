@@ -23,7 +23,14 @@ async function attemptLogin() {
             headers: { "Content-Type": "application/json" },
         });
 
-        const results = await response.json();
+        const body = await response.text();
+        let results = body;
+
+        try {
+            results = JSON.parse(body);
+        } catch {
+            // c/c/c/c/c/c//c/sa//a/fsd/fasd/asdf/adsklfjoiawefjioawfjiowejfioWJViowjfeqiojeioW Jwoifufkckkckckkc
+        }
 
         if (results === "invalid") {
             warning.innerText = "Invalid username / password";
@@ -49,7 +56,8 @@ async function attemptLogin() {
         }
 
         document.location = "./dashboard";
-    } catch {
+    } catch(e) {
+        console.error(e);
         warning.innerText = "Login failed. Please try again.";
     }
 }
@@ -93,3 +101,4 @@ async function doReset() {
 auth.isLoggedIn().then(loggedIn => {
     if (loggedIn == true || loggedIn == "true") window.location = "./dashboard";
 });
+
