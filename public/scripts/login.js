@@ -19,7 +19,7 @@ async function attemptLogin() {
         headers: { "Content-Type": "application/json" },
     }).then(res => res);
 
-    if (results == "invalid" || results[0] == undefined) {
+    if (results == "invalid") {
         document.getElementById("warning").innerHTML = "Invalid username / password";
         return;
     }
