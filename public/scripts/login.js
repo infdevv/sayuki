@@ -13,16 +13,18 @@ async function attemptLogin() {
         return;
     }
 
-    const results = await fetch("/api/users/signIn", {
+    let results = await fetch("/api/users/signIn", {
         body: JSON.stringify({ username, password }),
         method: "POST",
         headers: { "Content-Type": "application/json" },
-    }).then(res => res.json());
+    }).then(res => res);
 
-    if (results.text == "invalid" || results[0] == undefined) {
+    if (results == "invalid" || results[0] == undefined) {
         document.getElementById("warning").innerHTML = "Invalid username / password";
         return;
     }
+
+    res = res.json();
 
     if (results[1] === "must_reset") {
         localStorage.setItem("token", results[0]);
