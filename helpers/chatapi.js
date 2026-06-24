@@ -79,7 +79,14 @@ module.exports = function (fastify, opts, done) {
     })
   })
 
-  fastify.post("/v1/chat/completions", async function(request, reply) {
+  fastify.post("/v1/chat/completions", {
+    config: {
+      rateLimit: {
+        max: 3,
+        timeWindow: "1 minute",
+      }
+    }
+  }, async function(request, reply) {
 
     if (JSON.stringify(request.body).includes("lorebary")) {
       return sendError(reply, APP_ERRORS.lorebary)
