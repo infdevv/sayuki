@@ -64,6 +64,8 @@ app.get("/health", async (request, reply) => {
     return reply.status(200).reply("ok") // i sure fucking hope we're ok
 })
 
+// not removing the comments below but for clarification i was barely awake and it was 3 am OK?
+
 // mount the routes.
 // see here you'd expect me to make a childish joke revolving around my oshi
 // like "mount the pippa"

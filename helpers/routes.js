@@ -408,14 +408,18 @@ module.exports = function (fastify, opts, done) {
     })
 
     fastify.post("/api/users/create", async (request, reply) => {
-        if (!isAuthed(request, true)) return reply.code(401).send({ error: "Unauthorized" })
+        if (request.headers.authorization.split(" ")[1] != process.env.BOT_TOKEN){
+            if (!isAuthed(request, true)) return reply.code(401).send({ error: "Unauthorized" })
+        }
         const admin = getUserFromRequest(request)
         const { username } = request.body ?? {}
         if (!username) return reply.code(400).send({ error: "username is required" })
         const autoPass = process.env.AUTO_PASSWORD
         if (!autoPass) return reply.code(500).send({ error: "AUTO_PASSWORD env var is not set" })
         const result = addUser(username, autoPass)
-        if (result.worked) logItem(`Created user: ${username}`, "audit", admin, request.ip)
+        if (request.headers.authorization.split(" ")[1] != process.env.BOT_TOKEN){
+            if (result.worked) logItem(`Created user: ${username}`, "audit", admin, request.ip)
+        }        
         return reply.code(result.worked ? 200 : 400).send(result)
     })
 
