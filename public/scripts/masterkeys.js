@@ -165,6 +165,7 @@ function openEditModal(name) {
     document.getElementById("modal-submit-btn").textContent = "Save";
     document.getElementById("mk-name").value = name;
     document.getElementById("mk-name").disabled = true;
+    document.getElementById("mk-limit").value = (card.dataset.poolMode === "1" ? card.dataset.poolUsageCount : card.dataset.limit) || 0;
     populateKeysList(true);
     document.getElementById("mk-url").value = card.querySelector(".url-text")?.textContent || "";
     document.getElementById("mk-pool-mode").value = card.dataset.poolMode || "0";
