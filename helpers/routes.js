@@ -408,6 +408,7 @@ module.exports = function (fastify, opts, done) {
     })
 
     fastify.post("/api/users/create", async (request, reply) => {
+        
         if (request.headers.authorization.split(" ")[1] != process.env.BOT_TOKEN){
             if (!isAuthed(request, true)) return reply.code(401).send({ error: "Unauthorized" })
         }

@@ -52,6 +52,15 @@ function sendError(reply, err) {
   return reply.status(err.status).send(err.body)
 }
 
+function shuffledUpstreamKeys(value) {
+  const keys = [...new Set(String(value ?? "").split(",").map(key => key.trim()).filter(Boolean))]
+  for (let i = keys.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1))
+    ;[keys[i], keys[j]] = [keys[j], keys[i]]
+  }
+  return keys
+}
+
 module.exports = function (fastify, opts, done) {
 
   fastify.get("/v1/", async (request, reply) => {
@@ -129,27 +138,55 @@ module.exports = function (fastify, opts, done) {
     const inputEstimate = Math.round(countTokens(request.body.messages))
 
     const proxyUrl = `https://ffproxy.sayuki-proxy.com/?target=${encodeURIComponent(masterKey.upstreamUrl)}`
-    const upstreamHeaders = {
-      "Content-Type": "application/json",
-      "Authorization": `Bearer ${masterKey.upstreamKey}`,
-      "X-Proxy-Token": "sayuki-proxy-forward-protection"
-    }
     const upstreamBody = JSON.stringify(request.body)
+    const upstreamKeys = shuffledUpstreamKeys(masterKey.upstreamKey)
+    let upstream = null
+    let lastFetchError = null
 
-    if (global.__DEBUG) {
-      global.__debugLog("UPSTREAM FETCH", {
-        proxyUrl,
-        targetUrl: masterKey.upstreamUrl,
-        headers: upstreamHeaders,
-        body: request.body,
+    for (let i = 0; i < upstreamKeys.length; i++) {
+      const upstreamHeaders = {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${upstreamKeys[i]}`,
+        "X-Proxy-Token": "sayuki-proxy-forward-protection"
+      }
+
+      if (global.__DEBUG) {
+        global.__debugLog("UPSTREAM FETCH", {
+          proxyUrl,
+          targetUrl: masterKey.upstreamUrl,
+          keyAttempt: i + 1,
+          keyCount: upstreamKeys.length,
+          headers: { ...upstreamHeaders, Authorization: "Bearer [REDACTED]" },
+          body: request.body,
+        })
+      }
+
+      try {
+        upstream = await fetch(proxyUrl, {
+          headers: upstreamHeaders,
+          body: upstreamBody,
+          method: "POST"
+        })
+        if (upstream.ok || i === upstreamKeys.length - 1) break
+        try { await upstream.body?.cancel() } catch {}
+      } catch (error) {
+        lastFetchError = error
+        upstream = null
+      }
+    }
+
+    if (!upstream) {
+      if (global.__DEBUG && lastFetchError) global.__debugLog("UPSTREAM FETCH FAILED", { message: lastFetchError.message })
+      return reply.status(502).send({
+        error: {
+          message: "Could not reach the upstream provider with any configured API key.",
+          type: "upstream_error",
+          code: "upstream_unavailable",
+          param: null,
+          upstream_status: 502
+        }
       })
     }
-
-    const upstream = await fetch(proxyUrl, {
-      headers: upstreamHeaders,
-      body: upstreamBody,
-      method: "POST"
-    })
 
     if (global.__DEBUG) {
       const upstreamRespHeaders = {}

@@ -173,7 +173,7 @@ const LIMITS = {
     lorebookData:    500_000,
     url:             512,
     provider:        64,
-    upstreamKey:     256,
+    upstreamKey:     10_000,
     configKey:       128,
     configValue:     10_000,
     logContent:      50_000,

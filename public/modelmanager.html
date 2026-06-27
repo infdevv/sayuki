@@ -64,8 +64,12 @@
                     <input id="mk-name" placeholder="e.g. api-main">
                 </div>
                 <div class="field-row">
-                    <label class="modal-label">Upstream API Key</label>
-                    <input id="mk-key" placeholder="sk-...">
+                    <label class="modal-label">Upstream API Keys</label>
+                    <div id="mk-keys-list"></div>
+                    <button type="button" onclick="addKeyRow()" style="margin-top:6px;font-size:12px;height:32px;">
+                        <span class="material-symbols-outlined" style="font-size:15px;">add</span>
+                        Add API key
+                    </button>
                 </div>
                 <div class="field-row">
                     <label class="modal-label">Upstream URL</label>

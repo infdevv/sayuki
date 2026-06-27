@@ -5,6 +5,32 @@ function authHeaders() {
     return { "Authorization": "Bearer " + localStorage.getItem("token"), "Content-Type": "application/json" };
 }
 
+function addKeyRow(key = "", placeholder = "sk-...") {
+    const list = document.getElementById("mk-keys-list");
+    const row = document.createElement("div");
+    row.className = "model-row key-row";
+    row.innerHTML = `
+        <input class="upstream-key" type="password" autocomplete="off">
+        <span class="material-symbols-outlined remove-model" onclick="this.closest('.key-row').remove()">close</span>
+    `;
+    const input = row.querySelector(".upstream-key");
+    input.value = key;
+    input.placeholder = placeholder;
+    list.appendChild(row);
+}
+
+function getKeysFromList() {
+    return Array.from(document.querySelectorAll("#mk-keys-list .upstream-key"))
+        .map(input => input.value.trim())
+        .filter(Boolean)
+        .join(",");
+}
+
+function populateKeysList(editing = false) {
+    document.getElementById("mk-keys-list").innerHTML = "";
+    addKeyRow("", editing ? "leave blank to keep existing key(s)" : "sk-...");
+}
+
 function addModelRow(name = "", contextWindow = "") {
     const list = document.getElementById("mk-models-list");
     const row = document.createElement("div");
@@ -139,7 +165,7 @@ function openEditModal(name) {
     document.getElementById("modal-submit-btn").textContent = "Save";
     document.getElementById("mk-name").value = name;
     document.getElementById("mk-name").disabled = true;
-    document.getElementById("mk-key").value = "";
+    populateKeysList(true);
     document.getElementById("mk-url").value = card.querySelector(".url-text")?.textContent || "";
     document.getElementById("mk-pool-mode").value = card.dataset.poolMode || "0";
     const savedModels = JSON.parse(card.dataset.models || "[]");
@@ -160,9 +186,10 @@ function openEditModal(name) {
 }
 
 function clearForm() {
-    ["mk-name", "mk-key", "mk-url", "mk-limit"].forEach(id => {
+    ["mk-name", "mk-url", "mk-limit"].forEach(id => {
         document.getElementById(id).value = "";
     });
+    populateKeysList(false);
     document.getElementById("mk-models-list").innerHTML = "";
     document.getElementById("mk-pool-mode").value = "0";
     document.getElementById("mk-access-section").style.display = "none";
@@ -182,7 +209,7 @@ function applyUrlLock(url) {
 
 async function submitModal() {
     const name = document.getElementById("mk-name").value.trim();
-    const key = document.getElementById("mk-key").value.trim();
+    const key = getKeysFromList();
     const url = document.getElementById("mk-url").value.trim();
     const limit = parseInt(document.getElementById("mk-limit").value) || 0;
     const poolMode = document.getElementById("mk-pool-mode").value === "1";
