@@ -83,6 +83,7 @@ function addKeyCard(mk) {
     el.dataset.code = code || "";
     el.dataset.models = JSON.stringify(models || []);
     el.dataset.contextWindows = JSON.stringify(contextWindows || {});
+    el.dataset.limit = limit ?? 0;
     el.dataset.poolMode = poolMode ? "1" : "0";
     el.dataset.poolUsageCount = poolUsageCount ?? 0;
     el.innerHTML = `
@@ -165,7 +166,7 @@ function openEditModal(name) {
     document.getElementById("modal-submit-btn").textContent = "Save";
     document.getElementById("mk-name").value = name;
     document.getElementById("mk-name").disabled = true;
-    document.getElementById("mk-limit").value = (card.dataset.poolMode === "1" ? card.dataset.poolUsageCount : card.dataset.limit) || 0;
+    document.getElementById("mk-limit").value = card.dataset.limit || 0;
     populateKeysList(true);
     document.getElementById("mk-url").value = card.querySelector(".url-text")?.textContent || "";
     document.getElementById("mk-pool-mode").value = card.dataset.poolMode || "0";
@@ -235,6 +236,7 @@ async function submitModal() {
             card.querySelector(".url-text").textContent = url || "—";
             card.dataset.models = JSON.stringify(models);
             card.dataset.contextWindows = JSON.stringify(contextWindows);
+            card.dataset.limit = limit;
             card.dataset.poolMode = poolMode ? "1" : "0";
             const modelsDisplay = 150 > (models.length > 0
                 ? models.map(m => contextWindows?.[m] ? `${m} (${Number(contextWindows[m]).toLocaleString()})` : m).join(", ")
