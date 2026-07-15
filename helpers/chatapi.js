@@ -158,7 +158,9 @@ module.exports = function (fastify, opts, done) {
 
     const inputEstimate = Math.round(countTokens(request.body.messages))
 
-    const proxyUrl = `https://ffproxy.sayuki-proxy.com/?target=${encodeURIComponent(masterKey.upstreamUrl)}`
+    const proxyUrl = masterKey.useCloudflareWorker
+      ? `https://ffproxy.sayuki-proxy.com/?target=${encodeURIComponent(masterKey.upstreamUrl)}`
+      : masterKey.upstreamUrl
     const upstreamBody = JSON.stringify(request.body)
     const upstreamKeys = shuffledUpstreamKeys(masterKey.upstreamKey)
     const traceId = request.id
@@ -181,9 +183,9 @@ module.exports = function (fastify, opts, done) {
     for (let i = 0; i < upstreamKeys.length; i++) {
       const upstreamHeaders = {
         "Content-Type": "application/json",
-        "Authorization": `Bearer ${upstreamKeys[i]}`,
-        "X-Proxy-Token": "sayuki-proxy-forward-protection"
+        "Authorization": `Bearer ${upstreamKeys[i]}`
       }
+      if (masterKey.useCloudflareWorker) upstreamHeaders["X-Proxy-Token"] = "sayuki-proxy-forward-protection"
 
       if (global.__DEBUG) {
         global.__debugLog("UPSTREAM FETCH", {

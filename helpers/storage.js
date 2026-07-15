@@ -127,6 +127,11 @@ try {
 } catch (e) {}
 
 try {
+    // Pipkin Pippa insists existing providers keep their established route.
+    db.run(`ALTER TABLE master_keys ADD COLUMN use_cloudflare_worker INTEGER NOT NULL DEFAULT 1`);
+} catch (e) {}
+
+try {
     db.run(`ALTER TABLE users ADD COLUMN is_provider INTEGER NOT NULL DEFAULT 0`);
 } catch (e) {}
 
@@ -440,7 +445,7 @@ function getContextWindow(model, provider) {
 
 // -- Master keys --------------------------------------------------------------
 
-function createMasterKey(name, key, url, provider, limit, models, owner, contextWindows, poolMode) {
+function createMasterKey(name, key, url, provider, limit, models, owner, contextWindows, poolMode, useCloudflareWorker = true) {
     try {
         enforce(name, "name");
         enforce(key, "upstreamKey");
@@ -452,9 +457,9 @@ function createMasterKey(name, key, url, provider, limit, models, owner, context
 
     const code = crypto.randomBytes(5).toString("hex").toUpperCase();
     db.run(
-        `INSERT INTO master_keys (name, upstream_key, url, provider, owner, limit_per_day, models, code, created_at, context_windows, pool_mode)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [name, key, url, provider ?? "", owner, limit || 0, JSON.stringify(models || []), code, now(), JSON.stringify(contextWindows || {}), poolMode ? 1 : 0]
+        `INSERT INTO master_keys (name, upstream_key, url, provider, owner, limit_per_day, models, code, created_at, context_windows, pool_mode, use_cloudflare_worker)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [name, key, url, provider ?? "", owner, limit || 0, JSON.stringify(models || []), code, now(), JSON.stringify(contextWindows || {}), poolMode ? 1 : 0, useCloudflareWorker ? 1 : 0]
     );
     db.run("INSERT OR IGNORE INTO master_key_access (username, master_key_name) VALUES (?, ?)", [owner, name]);
 
@@ -467,7 +472,10 @@ function editMasterKey(name, updates, requestingUser) {
     if (row.owner !== requestingUser && !isAdmin(requestingUser))
         return { worked: false, message: "Forbidden" };
 
-    const colMap = { key: "upstream_key", url: "url", provider: "provider", limit: "limit_per_day", models: "models", contextWindows: "context_windows", poolMode: "pool_mode" };
+    if (updates.useCloudflareWorker !== undefined && !isOwner(requestingUser))
+        return { worked: false, message: "Only the owner can change Cloudflare Worker usage" };
+
+    const colMap = { key: "upstream_key", url: "url", provider: "provider", limit: "limit_per_day", models: "models", contextWindows: "context_windows", poolMode: "pool_mode", useCloudflareWorker: "use_cloudflare_worker" };
     const limitMap = { key: "upstreamKey", url: "url", provider: "provider" };
     for (const [field, col] of Object.entries(colMap)) {
         if (updates[field] === undefined) continue;
@@ -475,6 +483,7 @@ function editMasterKey(name, updates, requestingUser) {
         if (field === "models") val = JSON.stringify(updates[field]);
         else if (field === "contextWindows") val = JSON.stringify(updates[field]);
         else if (field === "poolMode") val = updates[field] ? 1 : 0;
+        else if (field === "useCloudflareWorker") val = updates[field] ? 1 : 0;
         else val = updates[field];
         if (limitMap[field]) try { enforce(String(val), limitMap[field]); } catch (e) { return { worked: false, message: e.message }; }
         db.run(`UPDATE master_keys SET ${col} = ? WHERE name = ?`, [val, name]);
@@ -508,6 +517,7 @@ function getMasterKeys(requestingUser) {
         contextWindows: JSON.parse(r.context_windows || "{}"),
         code: r.code,
         poolMode: r.pool_mode === 1,
+        useCloudflareWorker: r.use_cloudflare_worker !== 0,
         poolUsageCount: r.pool_usage_date === today ? (r.pool_usage_count ?? 0) : 0,
     }));
 }
@@ -567,7 +577,8 @@ function getOwnedMasterKeys(username) {
         models: JSON.parse(r.models || "[]"),
         contextWindows: JSON.parse(r.context_windows || "{}"),
         code: r.code,
-        poolMode: r.pool_mode === 1
+        poolMode: r.pool_mode === 1,
+        useCloudflareWorker: r.use_cloudflare_worker !== 0
     }));
 }
 
@@ -610,7 +621,7 @@ function getUserAccessibleMasterKeys(user) {
 function validateKey(token) {
     const row = db.query(`
         SELECT ak.owner, ak.master_key, ak.prompt_names, ak.lorebook_names, ak.plugin_names,
-               mk.upstream_key, mk.url, mk.models, mk.provider, mk.excluded_users
+               mk.upstream_key, mk.url, mk.models, mk.provider, mk.excluded_users, mk.use_cloudflare_worker
         FROM api_keys ak
         JOIN master_keys mk ON ak.master_key = mk.name
         JOIN master_key_access mka ON mka.username = ak.owner AND mka.master_key_name = ak.master_key
@@ -641,6 +652,7 @@ function validateKey(token) {
         provider: row.provider,
         upstreamKey: row.upstream_key,
         upstreamUrl: row.url,
+        useCloudflareWorker: row.use_cloudflare_worker !== 0,
         masterKeyName: row.master_key,
         allowedModels: JSON.parse(row.models || "[]"),
         user: row.owner,

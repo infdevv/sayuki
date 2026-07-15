@@ -1,5 +1,6 @@
 let editingKey = null;
 let usageRows = [];
+let currentUserIsOwner = false;
 
 function authHeaders() {
     return { "Authorization": "Bearer " + localStorage.getItem("token"), "Content-Type": "application/json" };
@@ -66,7 +67,7 @@ function populateModelsList(models, contextWindows) {
 }
 
 function addKeyCard(mk) {
-    const { name, url, limit, models, contextWindows, poolMode, poolUsageCount } = mk;
+    const { name, url, limit, models, contextWindows, poolMode, poolUsageCount, useCloudflareWorker } = mk;
     const { code } = mk;
     const limitDisplay = limit > 0
         ? poolMode
@@ -86,6 +87,7 @@ function addKeyCard(mk) {
     el.dataset.limit = limit ?? 0;
     el.dataset.poolMode = poolMode ? "1" : "0";
     el.dataset.poolUsageCount = poolUsageCount ?? 0;
+    el.dataset.useCloudflareWorker = useCloudflareWorker === false ? "0" : "1";
     el.innerHTML = `
         <div class="key-content">
             <div class="key-header" onclick="toggleKeyDetails(this)">
@@ -170,6 +172,7 @@ function openEditModal(name) {
     populateKeysList(true);
     document.getElementById("mk-url").value = card.querySelector(".url-text")?.textContent || "";
     document.getElementById("mk-pool-mode").value = card.dataset.poolMode || "0";
+    document.getElementById("mk-use-cloudflare-worker").checked = card.dataset.useCloudflareWorker !== "0";
     const savedModels = JSON.parse(card.dataset.models || "[]");
     const savedCW = JSON.parse(card.dataset.contextWindows || "{}");
     populateModelsList(savedModels, savedCW);
@@ -181,6 +184,7 @@ function openEditModal(name) {
     document.getElementById("mk-access-search").value = "";
     loadAccessUsers(name);
     document.getElementById("mk-usage-section").style.display = "";
+    document.getElementById("mk-cloudflare-worker-section").style.display = currentUserIsOwner ? "" : "none";
     document.getElementById("mk-usage-search").value = "";
     document.getElementById("mk-usage-sort").value = "usage-desc";
     loadUsageForKey(name);
@@ -194,6 +198,8 @@ function clearForm() {
     populateKeysList(false);
     document.getElementById("mk-models-list").innerHTML = "";
     document.getElementById("mk-pool-mode").value = "0";
+    document.getElementById("mk-use-cloudflare-worker").checked = true;
+    document.getElementById("mk-cloudflare-worker-section").style.display = currentUserIsOwner ? "" : "none";
     document.getElementById("mk-access-section").style.display = "none";
     document.getElementById("mk-usage-section").style.display = "none";
     usageRows = [];
@@ -215,10 +221,12 @@ async function submitModal() {
     const url = document.getElementById("mk-url").value.trim();
     const limit = parseInt(document.getElementById("mk-limit").value) || 0;
     const poolMode = document.getElementById("mk-pool-mode").value === "1";
+    const useCloudflareWorker = document.getElementById("mk-use-cloudflare-worker").checked;
     const { models, contextWindows } = getModelsFromList();
 
     if (editingKey) {
         const updates = { url, limit, models, contextWindows, poolMode };
+        if (currentUserIsOwner) updates.useCloudflareWorker = useCloudflareWorker;
         if (key) updates.key = key;
 
         const res = await fetch("/api/masterkeys/edit", {
@@ -238,6 +246,7 @@ async function submitModal() {
             card.dataset.contextWindows = JSON.stringify(contextWindows);
             card.dataset.limit = limit;
             card.dataset.poolMode = poolMode ? "1" : "0";
+            card.dataset.useCloudflareWorker = useCloudflareWorker ? "1" : "0";
             const modelsDisplay = 150 > (models.length > 0
                 ? models.map(m => contextWindows?.[m] ? `${m} (${Number(contextWindows[m]).toLocaleString()})` : m).join(", ")
                 : "All models").length
@@ -261,12 +270,12 @@ async function submitModal() {
         const res = await fetch("/api/masterkeys/create", {
             method: "POST",
             headers: authHeaders(),
-            body: JSON.stringify({ name, key, url, limit, models, contextWindows, poolMode })
+            body: JSON.stringify({ name, key, url, limit, models, contextWindows, poolMode, useCloudflareWorker })
         });
         const data = await res.json();
         if (!res.ok) return alert(data.error ?? "Failed to create master key.");
 
-        addKeyCard({ name, url, limit, models, contextWindows, poolMode, usageDate: "", usageCount: 0 });
+        addKeyCard({ name, url, limit, models, contextWindows, poolMode, useCloudflareWorker, usageDate: "", usageCount: 0 });
         closeModal();
 
         location.reload()
@@ -519,6 +528,9 @@ async function init() {
 
     const provRes = await fetch("/api/users/isProvider", { headers: authHeaders() });
     if (await provRes.text() !== "true") { window.location = "/dashboard"; return; }
+
+    const ownerRes = await fetch("/api/users/isOwner", { headers: authHeaders() });
+    currentUserIsOwner = ownerRes.ok && await ownerRes.text() === "true";
 
     const res = await fetch("/api/masterkeys", { headers: authHeaders() });
     if (res.ok) {

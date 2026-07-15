@@ -145,6 +145,11 @@ module.exports = function (fastify, opts, done) {
         return reply.send(isOwner(request.params.username))
     })
 
+    fastify.get("/api/users/isOwner", async (request, reply) => {
+        if (!isAuthed(request)) return reply.code(401).send({ error: "Unauthorized" })
+        return reply.send(isOwner(getUserFromRequest(request)))
+    })
+
     fastify.get("/api/plugins", async (request, reply) => {
         return reply.send(plugins)
     })
@@ -365,9 +370,9 @@ module.exports = function (fastify, opts, done) {
     fastify.post("/api/masterkeys/create", async (request, reply) => {
         if (!isAuthed(request)) return reply.code(401).send({ error: "Unauthorized" })
         const username = getUserFromRequest(request)
-        const { name, key, url, limit, models, contextWindows, poolMode } = request.body
+        const { name, key, url, limit, models, contextWindows, poolMode, useCloudflareWorker } = request.body
         if (!name || !key || !url) return reply.code(400).send({ error: "name, key, and url are required" })
-        const result = createMasterKey(name, key, url, username, limit, models, username, contextWindows, poolMode)
+        const result = createMasterKey(name, key, url, username, limit, models, username, contextWindows, poolMode, isOwner(username) ? useCloudflareWorker !== false : true)
         if (result.worked) logItem(`Created master key: ${name}`, "audit", username, request.ip)
         return reply.code(result.worked ? 200 : 400).send(result)
     })

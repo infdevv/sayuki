@@ -75,6 +75,13 @@
                     <label class="modal-label">Upstream URL</label>
                     <input id="mk-url" placeholder="https://api.anything.com/v1/chat/completions">
                 </div>
+                <div class="field-row" id="mk-cloudflare-worker-section" style="display:none;">
+                    <label class="modal-label" for="mk-use-cloudflare-worker">Route through Cloudflare Worker</label>
+                    <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:rgba(254,181,191,0.75);cursor:pointer;">
+                        <input id="mk-use-cloudflare-worker" type="checkbox" checked>
+                        Use the Cloudflare Worker proxy for this provider
+                    </label>
+                </div>
                 <div class="field-row">
                     <label class="modal-label">Daily Request Limit (0 = unlimited)</label>
                     <input id="mk-limit" type="number" min="0" placeholder="0">
