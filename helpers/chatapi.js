@@ -61,6 +61,27 @@ function shuffledUpstreamKeys(value) {
   return keys
 }
 
+function getUrlDiagnostics(value) {
+  const raw = String(value ?? "")
+  try {
+    const parsed = new URL(raw)
+    return {
+      raw,
+      isBlank: raw.trim().length === 0,
+      protocol: parsed.protocol,
+      host: parsed.host,
+      pathname: parsed.pathname,
+      search: parsed.search,
+    }
+  } catch (error) {
+    return {
+      raw,
+      isBlank: raw.trim().length === 0,
+      parseError: error.message,
+    }
+  }
+}
+
 module.exports = function (fastify, opts, done) {
 
   fastify.get("/v1/", async (request, reply) => {
@@ -140,8 +161,22 @@ module.exports = function (fastify, opts, done) {
     const proxyUrl = `https://ffproxy.sayuki-proxy.com/?target=${encodeURIComponent(masterKey.upstreamUrl)}`
     const upstreamBody = JSON.stringify(request.body)
     const upstreamKeys = shuffledUpstreamKeys(masterKey.upstreamKey)
+    const traceId = request.id
     let upstream = null
     let lastFetchError = null
+
+    if (global.__DEBUG) {
+      // Pipkin Pippa would demand receipts for every upstream hop.
+      global.__debugLog("UPSTREAM REQUEST PREPARED", {
+        traceId,
+        masterKeyName: masterKey.masterKeyName,
+        target: getUrlDiagnostics(masterKey.upstreamUrl),
+        proxy: getUrlDiagnostics(proxyUrl),
+        encodedTarget: encodeURIComponent(masterKey.upstreamUrl),
+        configuredKeyCount: upstreamKeys.length,
+        bodyBytes: Buffer.byteLength(upstreamBody),
+      })
+    }
 
     for (let i = 0; i < upstreamKeys.length; i++) {
       const upstreamHeaders = {
@@ -152,6 +187,7 @@ module.exports = function (fastify, opts, done) {
 
       if (global.__DEBUG) {
         global.__debugLog("UPSTREAM FETCH", {
+          traceId,
           proxyUrl,
           targetUrl: masterKey.upstreamUrl,
           keyAttempt: i + 1,
@@ -167,16 +203,39 @@ module.exports = function (fastify, opts, done) {
           body: upstreamBody,
           method: "POST"
         })
+        if (global.__DEBUG) {
+          global.__debugLog("UPSTREAM FETCH RESULT", {
+            traceId,
+            keyAttempt: i + 1,
+            status: upstream.status,
+            statusText: upstream.statusText,
+            ok: upstream.ok,
+            responseUrl: upstream.url,
+            redirected: upstream.redirected,
+          })
+        }
         if (upstream.ok || i === upstreamKeys.length - 1) break
-        try { await upstream.body?.cancel() } catch {}
+        try { await upstream.body?.cancel() } catch (cancelError) {
+          if (global.__DEBUG) global.__debugLog("UPSTREAM RESPONSE CANCEL FAILED", { traceId, message: cancelError.message })
+        }
       } catch (error) {
         lastFetchError = error
         upstream = null
+        if (global.__DEBUG) {
+          global.__debugLog("UPSTREAM FETCH THREW", {
+            traceId,
+            keyAttempt: i + 1,
+            name: error.name,
+            message: error.message,
+            cause: error.cause?.message,
+            stack: error.stack,
+          })
+        }
       }
     }
 
     if (!upstream) {
-      if (global.__DEBUG && lastFetchError) global.__debugLog("UPSTREAM FETCH FAILED", { message: lastFetchError.message })
+      if (global.__DEBUG && lastFetchError) global.__debugLog("UPSTREAM FETCH FAILED", { traceId, message: lastFetchError.message })
       return reply.status(502).send({
         error: {
           message: "Could not reach the upstream provider with any configured API key.",
@@ -191,21 +250,17 @@ module.exports = function (fastify, opts, done) {
     if (global.__DEBUG) {
       const upstreamRespHeaders = {}
       upstream.headers.forEach((v, k) => { upstreamRespHeaders[k] = v })
-      global.__debugLog(`UPSTREAM RESPONSE ${upstream.status}`, { headers: upstreamRespHeaders })
+      global.__debugLog(`UPSTREAM RESPONSE ${upstream.status}`, { traceId, headers: upstreamRespHeaders })
     }
 
     if (!upstream.ok) {
-      let upstreamBody
-      try { upstreamBody = await upstream.json() } catch { upstreamBody = null }
-      return reply.status(upstream.status).send({
-        error: {
-          message: "Upstream provider returned an error.",
-          type: "upstream_error",
-          code: upstreamBody?.error?.code ?? "upstream_error",
-          param: null,
-          upstream_status: upstream.status
-        }
-      })
+      const upstreamText = await upstream.text()
+      if (global.__DEBUG) global.__debugLog("UPSTREAM ERROR RESPONSE BODY", { traceId, body: upstreamText })
+      try {
+        return reply.status(upstream.status).send(JSON.parse(upstreamText))
+      } catch {
+        return reply.status(upstream.status).send(upstreamText)
+      }
     }
 
     _recordRequest()
