@@ -168,7 +168,6 @@ module.exports = function (fastify, opts, done) {
     let lastFetchError = null
 
     if (global.__DEBUG) {
-      // Pipkin Pippa would demand receipts for every upstream hop.
       global.__debugLog("UPSTREAM REQUEST PREPARED", {
         traceId,
         masterKeyName: masterKey.masterKeyName,

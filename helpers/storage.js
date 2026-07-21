@@ -127,7 +127,6 @@ try {
 } catch (e) {}
 
 try {
-    // Pipkin Pippa insists existing providers keep their established route.
     db.run(`ALTER TABLE master_keys ADD COLUMN use_cloudflare_worker INTEGER NOT NULL DEFAULT 1`);
 } catch (e) {}
 
