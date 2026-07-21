@@ -13,24 +13,25 @@ function countTokens(conversation){
     return estimate
 }
 
-function adjustToWindow(conversation, contextWindow){
-    if (!contextWindow) return conversation
+function adjustToWindow(conversation, contextWindow, reservedOutputTokens = 0){
+    const windowSize = Number(contextWindow)
+    if (!Number.isFinite(windowSize) || windowSize <= 0) return conversation
+
+    const inputWindow = Math.max(0, windowSize - Math.max(0, Number(reservedOutputTokens) || 0))
 
     // get system / first user message
-    let firstMessage = conversation[0].content
-
-    while (conversation[0].content.length / 3 > contextWindow / 5){
+    while (conversation[0].content.length / 3 > inputWindow / 5){
         conversation[0].content = conversation[0].content.slice(0,Math.floor((conversation[0].content).length / 2))
     }
 
-    while (countTokens(conversation) > contextWindow){
+    while (countTokens(conversation) > inputWindow && conversation.length > 1){
         conversation.splice(1,1)
     }
 
     return conversation
 }
 
-function preprocess(conversation, lorebooks, prompts, plugins, contextWindow){
+function preprocess(conversation, lorebooks, prompts, plugins, contextWindow, reservedOutputTokens){
     
     if (prompts.length > 0){
         for (prompt of prompts){
@@ -93,7 +94,7 @@ function preprocess(conversation, lorebooks, prompts, plugins, contextWindow){
         }
     }
 
-    return adjustToWindow(conversation, contextWindow)
+    return adjustToWindow(conversation, contextWindow, reservedOutputTokens)
 }
 
 module.exports = { preprocess, countTokens, adjustToWindow}

@@ -149,7 +149,8 @@ module.exports = function (fastify, opts, done) {
       masterKey.lorebooks,
       masterKey.prompts,
       masterKey.plugins,
-      StorageAPI.getContextWindow(request.body.model, masterKey.provider)
+      masterKey.contextWindows[request.body.model],
+      request.body.max_completion_tokens ?? request.body.max_tokens
     )
 
     if ((await scanChat(request.body.messages, masterKey.user, request.ip))["isFlagged"]) {

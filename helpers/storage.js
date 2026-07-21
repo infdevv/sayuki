@@ -437,9 +437,13 @@ function getModels(apiKey = null) {
     }));
 }
 
-function getContextWindow(model, provider) {
-    return db.query("SELECT context_window FROM models WHERE name = ? AND provider = ?")
-        .get(model, provider)?.context_window ?? null;
+function getContextWindow(model, masterKeyName) {
+    const row = db.query("SELECT context_windows FROM master_keys WHERE name = ?")
+        .get(masterKeyName);
+    if (!row) return null;
+
+    const contextWindows = JSON.parse(row.context_windows || "{}");
+    return contextWindows[model] ?? null;
 }
 
 // -- Master keys --------------------------------------------------------------
@@ -620,7 +624,7 @@ function getUserAccessibleMasterKeys(user) {
 function validateKey(token) {
     const row = db.query(`
         SELECT ak.owner, ak.master_key, ak.prompt_names, ak.lorebook_names, ak.plugin_names,
-               mk.upstream_key, mk.url, mk.models, mk.provider, mk.excluded_users, mk.use_cloudflare_worker
+               mk.upstream_key, mk.url, mk.models, mk.context_windows, mk.provider, mk.excluded_users, mk.use_cloudflare_worker
         FROM api_keys ak
         JOIN master_keys mk ON ak.master_key = mk.name
         JOIN master_key_access mka ON mka.username = ak.owner AND mka.master_key_name = ak.master_key
@@ -635,6 +639,7 @@ function validateKey(token) {
     const promptNames = JSON.parse(row.prompt_names || "[]");
     const lorebookNames = JSON.parse(row.lorebook_names || "[]");
     const pluginNames = JSON.parse(row.plugin_names || "[]");
+    const contextWindows = JSON.parse(row.context_windows || "{}");
 
     // Attached prompts remain usable even when their content is hidden in the public list.
     const prompts = promptNames
@@ -654,6 +659,7 @@ function validateKey(token) {
         useCloudflareWorker: row.use_cloudflare_worker !== 0,
         masterKeyName: row.master_key,
         allowedModels: JSON.parse(row.models || "[]"),
+        contextWindows,
         user: row.owner,
         prompts: prompts,
         lorebooks: lorebooks,
